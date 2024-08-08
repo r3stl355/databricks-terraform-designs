@@ -1,0 +1,12 @@
+{
+	"metastore-eu": {
+		"region": "eu-west-1",
+		"name": "metastore-eu",
+		"owner": "admins"
+	},
+	"metastore-us": {
+		"region": "us-east-2",
+		"name": "metastore-us",
+		"owner": "admins"
+	}
+}

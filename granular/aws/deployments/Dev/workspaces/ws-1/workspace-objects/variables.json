@@ -1,0 +1,15 @@
+{
+	"workspace_url": "<workspace-url-here",
+	"cluster_params": {
+		"cluster-1": {
+			"cluster_name": "cluster-1",
+			"security_mode": "SINGLE_USER",
+			"auto_terminate_minutes": 60,
+			"user_name": "<usename-here>",
+			"tags": {
+				"department": "dep-1"
+			}
+		}
+	},
+	"workpace_admin_params": ["<admin-login-email-here>"]
+}
