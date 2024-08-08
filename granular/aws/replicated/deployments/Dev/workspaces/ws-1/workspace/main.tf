@@ -4,7 +4,7 @@ locals {
 }
 
 module "workspace" {
-  source = "../../../../../modules/workspace"
+  source = "../../../../../../modules/workspace"
   account_params    = local.account_params
   workspace_params  = local.workspace_params
   providers = {

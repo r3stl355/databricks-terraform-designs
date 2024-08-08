@@ -4,7 +4,7 @@ locals {
 }
 
 module "metastore" {
-  source = "../../../modules/metastore"
+  source = "../../../../modules/metastore"
   account_params    = local.account_params
   metastore_params  = local.metastore_params
   providers = {

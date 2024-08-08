@@ -4,16 +4,7 @@ terraform {
       source  = "databricks/databricks"
       version = ">=1.16.0"
     }
-
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 4.58.0"
-    }
   }
-}
-
-provider "aws" {
-  region = local.workspace_params.region
 }
 
 provider "databricks" {

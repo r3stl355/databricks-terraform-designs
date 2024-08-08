@@ -5,7 +5,7 @@ locals {
 }
 
 module "cluster" {
-  source = "../../../../../modules/cluster"
+  source = "../../../../../../modules/cluster"
   cluster_params = local.cluster_params  
   providers = {
     databricks.workspace = databricks.workspace
@@ -13,7 +13,7 @@ module "cluster" {
 }
 
 module "admin" {
-  source = "../../../../../modules/workspace-admin"
+  source = "../../../../../../modules/workspace-admin"
   workpace_admin_params = local.workpace_admin_params  
   providers = {
     databricks.workspace = databricks.workspace
