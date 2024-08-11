@@ -1,5 +1,5 @@
 terraform {
-  source = "../../../..//dry/account"
+  source = "../../../../../..//granular/aws/dry/account"
 }
 
 locals {

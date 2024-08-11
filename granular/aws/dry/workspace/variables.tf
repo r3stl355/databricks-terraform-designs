@@ -8,7 +8,7 @@ variable "workspace_params" {
 		workspace_name  = string
 		vpc_cidr		= string
 		metastore_id	= string
-		tags    	= optional(map(string))
+		tags    		= optional(map(string))
 	})
 }
 

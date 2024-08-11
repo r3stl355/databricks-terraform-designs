@@ -1,0 +1,48 @@
+{
+	"metastores": {
+		"metastore-eu": {
+			"region": "eu-west-1",
+			"name": "metastore-eu",
+			"owner": "admins"
+		},
+		"metastore-us": {
+			"region": "us-east-2",
+			"name": "metastore-us",
+			"owner": "admins"
+		}
+	},
+	"workspaces": {
+		"ws_1": {
+			"region": "eu-west-1",
+			"workspace_name": "ws-1",
+			"vpc_cidr": "10.0.0.0/16",
+			"metastore_id": "metastore-eu",
+			"tags": {
+				"department": "dep-1"
+			},
+			"cluster_params": {
+				"cluster-1": {
+					"cluster_name": "cluster-1",
+					"security_mode": "SINGLE_USER",
+					"auto_terminate_minutes": 60,
+					"user_name": "<username-here>",
+					"tags": {
+						"department": "dep-1"
+					}
+				}
+			},
+			"workpace_admin_params": ["<admin-login-email-here>"]
+		},
+		"ws_2": {
+			"region": "us-east-2",
+			"workspace_name": "ws-2",
+			"vpc_cidr": "10.0.0.0/16",
+			"metastore_id": "metastore-us",
+			"tags": {
+				"department": "dep-2"
+			},
+			"cluster_params": {},
+			"workpace_admin_params": ["<admin-login-email-here>"]
+		}
+	}
+}

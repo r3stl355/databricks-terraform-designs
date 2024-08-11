@@ -3,8 +3,7 @@ locals {
 }
 
 module "metastore" {
-  source = "../../modules/metastore"
-  account_params    = local.account_params
+  source            = "../../../../modules/aws/metastore"
   metastore_params  = var.metastore_params
   providers = {
     databricks.account = databricks.account

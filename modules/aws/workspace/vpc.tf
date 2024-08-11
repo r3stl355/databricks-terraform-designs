@@ -27,4 +27,8 @@ module "vpc" {
     cidr_blocks = "0.0.0.0/0"
     self        = true
   }]
+
+  providers = {
+    aws = aws.regional
+  }
 }

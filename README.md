@@ -8,12 +8,8 @@ Following is required to deploy these template
 
 - Admin level access to an existing Databricks account
 - Databrics Service Principle with `Account Admin` priveledges (and a corresponding secret)
-
-## Configuration
-
-Databricks account admin rights are required to create some of the resources here (e.g. creating a metastore or a workspace), whereas some resources will only need access to a Databricks workpace (e.g. create a cluster in the workspace). 
-
-A single file named `config.sh` contains environmental variables that can be used to configure common deployment properties (but not the actual resource variable values) and some values which are recommended to be managed via environmental variables (e.g. credentials). Some of those variables may not apply to some deployments (e.g. `databricks_token` only works with resources deployed to an existing Databricks workspace), but there is no harm in having them all in the same place for this demo. You can always split it into smaller config files with smaller scopes if needed, e.g. there may be no need to export account credentials for managing workspace resources.
+- [Terraform](https://developer.hashicorp.com/terraform/install?product_intent=terraform)
+- [Terragrunt](https://terragrunt.gruntwork.io/docs/getting-started/install/)
 
 ## Scenario
 
@@ -37,7 +33,11 @@ This is the scenario we are exploring here, a separate Databricks account is use
     - Pros: better visibility, leaner module instances
     - Cons: possible variable value duplication
 
-3. We chose a tiered approach to desinging the Terraform projects. At the first level, the designs are split into `coarse` or `granular`. 
+3. Next decision was to use JSON files to define variable values instead of `.tfvar` files. JSON is easier to generate and parse which could simplify testing (e.g. programmatically generate test configuraions) and reuse (e.g. programmatically read and validate parameter values against a centralised configuration to monitor conformance)
+    - Pros: easier to generate and parse programmatically, can be used outside the Terraform
+    - Cons: JSON files need to be explicitly parsed within the Terraform templates
+
+4. We chose a tiered approach to desinging the Terraform projects. At the first level, the designs are split into `coarse` or `granular`. 
 - `coarse`: large deployments when many resources are defined in the same Terraform project. This results in a large state containing many resources which may lead to a slower deployment. For this type of design we decided to use a single Terraform project for the entire environment, but we could have equally gone larger (e.g. all the environments in a single project) or smaller (e.g. a project per workspace).
     - Pros: reduced number of deployments, simpler to manage, all resources in one place
     - Cons: slower deployments, large blast radius in case something goes wrong with the deployment
@@ -61,6 +61,33 @@ This is the scenario we are exploring here, a separate Databricks account is use
 
 ## Conclusion
 
-From the scenario information, Test environment fits better into the `coarse` design when everything is deployed in one go and has a single state simplyfing the process, whereas Dev and Prod may require more `granular` design approach so that teams in Dev will have more flexibility and Prod environment is more robust and resilient to possible misconfigurations (e.g. a possible mistake could be made to cluster deployment template effecting a service but not the overall availability of the platform or unrelated services because cluster and workspace will use different deployments/states) and results in faster deployments.
+From the scenario, `coarse` design looks a better fit for Test environment where everything is deployed in one go. We used the `replicated` approach to avoid dependency on extra tooling. *Note* that here we are deploying 2 workspaces into Test environment in different regions. We had to look some variable values at the apply time (e.g. `metastore_id` property of the workspace) because everything is created in a single deployment, and restructure the `variables.json` file (e.g. grouping `workspace-items` under a relevant `workspace`).  
 
-Furthermore, the Dev environment will use a `replicated` desing as it offers the most flexibility, whereas Prod environment will adopt the `dry` design that will allow better governance and standardisation over the deployed resources.
+Dev and Prod may require more `granular` design approach so that teams in Dev will have more flexibility and Prod environment is more robust and resilient to possible misconfigurations (e.g. a possible mistake could be made to cluster deployment template effecting a service but not the overall availability of the platform or unrelated services because cluster and workspace will use different deployments/states) and results in faster deployments.
+
+Furthermore, the Dev environment will use a `replicated` design as it offers the most flexibility, whereas Prod environment will adopt the `dry` design that will allow better governance and standardisation over the deployed resources.
+
+## Quick Start
+
+## Configuration
+
+Databricks account admin rights are required to create some of the resources here (e.g. creating a metastore or a workspace), whereas some resources will only need access to a Databricks workpace (e.g. create a cluster in the workspace). 
+
+A `config.sh` file sets environmental variables that can be used to configure common deployment properties (but not the actual resource variable values) and some values which are recommended to be managed via environmental variables (e.g. credentials). Some of those variables may not apply to some deployments (e.g. `databricks_token` only works with resources deployed to an existing Databricks workspace), but there is no harm in having them all in the same place for this demo. You can always split it into config files with smaller scopes if needed, e.g. there may be no need to export account credentials for managing workspace resources.
+
+## Execution
+
+Most of the deployments here use Terraform direcltly, except for those using `dry` approach - those use Terragrunt. 
+
+- For Terraform:
+```
+terraform init
+terraform plan
+terraform apply
+```
+
+- For Terragrunt:
+```
+terragrunt plan
+terragrunt apply
+```

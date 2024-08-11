@@ -5,6 +5,6 @@ variable "var_file" {
 }
 
 variable "databricks_token" {
-    type = string
+    type        = string
     description = "Databricks token with admin access to the corresponding Databricks workspace"
 }

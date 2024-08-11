@@ -9,6 +9,6 @@ terraform {
 
 provider "databricks" {
   alias         = "workspace"
-  host          = local.config.workspace_url
+  host          = local.params.workspace_url
   token         = var.databricks_token
 }
