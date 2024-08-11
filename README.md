@@ -69,13 +69,13 @@ Furthermore, the Dev environment will use a `replicated` design as it offers the
 
 ## Quick Start
 
-## Configuration
+### Configuration
 
 Databricks account admin rights are required to create some of the resources here (e.g. creating a metastore or a workspace), whereas some resources will only need access to a Databricks workpace (e.g. create a cluster in the workspace). 
 
 A `config.sh` file sets environmental variables that can be used to configure common deployment properties (but not the actual resource variable values) and some values which are recommended to be managed via environmental variables (e.g. credentials). Some of those variables may not apply to some deployments (e.g. `databricks_token` only works with resources deployed to an existing Databricks workspace), but there is no harm in having them all in the same place for this demo. You can always split it into config files with smaller scopes if needed, e.g. there may be no need to export account credentials for managing workspace resources.
 
-## Execution
+### Execution
 
 Most of the deployments here use Terraform direcltly, except for those using `dry` approach - those use Terragrunt. 
 
