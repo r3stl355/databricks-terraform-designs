@@ -29,11 +29,11 @@ This is the scenario we are exploring here, a separate Databricks account is use
     - Pros: code reuse, centralised code management and governance, best practice
     - Cons: more effort to design modules, higher chance of conflicts as the number of deployments grow
 
-2. The second design decision was to use complex variable types to group together module properties instead of using individual property values. This creates leaner module instance declaraions and allows a better management of module properties, e.g. all the module specific variable values are grouped together and if new values are introduced then only the variable definition and corresponding structure containing the values need to be changed without changing the module instance declaration. However, in some cases this may result in repeated information with the risk of potential misconfiguration, e.g. a workspace requires a `region` parameter and if a single project is deploying multiple workspaces then each workspace variable will have it's own region value, which could a be a good thing if workspaces are deployed to different regions but will result in repeated values (and potential misconfiguration) if they are in the same region (having a single `region` parameter in this case would remove that risk). Benefits of using complex variables outweighted the possible issues so we decided to go with that.
+2. The second design decision was to use complex variable types to group together module properties instead of using individual property values. This creates leaner module instance declaraions and allows a better management of module properties, e.g. all the module specific variable values are grouped together and if new values are introduced then only the variable definition and corresponding structure containing the values need to be changed without changing the module instance declaration. However, in some cases this may result in repeated information with the risk of potential misconfiguration, e.g. a workspace requires a `region` parameter and if a single project is deploying multiple workspaces then each workspace variable will have its own region value, which could a be a good thing if workspaces are deployed to different regions but will result in repeated values (and potential misconfiguration) if they are in the same region (having a single `region` parameter in this case would remove that risk). Benefits of using complex variables outweighted the possible issues so we decided to go with that.
     - Pros: better visibility, leaner module instances
     - Cons: possible variable value duplication
 
-3. Next decision was to use JSON files to define variable values instead of `.tfvar` files. JSON is easier to generate and parse which could simplify testing (e.g. programmatically generate test configuraions) and reuse (e.g. programmatically read and validate parameter values against a centralised configuration to monitor conformance)
+3. Next decision was to use JSON files to define variable values instead of `.tfvar` files. JSON is easier to generate and parse which could simplify testing (e.g. programmatically generate test configurations) and reuse (e.g. programmatically read and validate parameter values against a centralised configuration to monitor conformance)
     - Pros: easier to generate and parse programmatically, can be used outside the Terraform
     - Cons: JSON files need to be explicitly parsed within the Terraform templates
 
@@ -91,3 +91,7 @@ terraform apply
 terragrunt plan
 terragrunt apply
 ```
+
+## Disclaimer
+
+This project is provided for informational purposes only. It is not created or formally supported by Databricks. Code are provided AS-IS and we do not make any guarantees of any kind.
