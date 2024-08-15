@@ -15,11 +15,19 @@ Following is required to deploy these template
 
 A commmon, and a recommended way to create multiple environments using Databricks is to use a separate Databricks workspace per environment. However, there are cases when this workspace-based environment separation may not be sufficient (e.g. a Production environment needs to comform to some regulatory standard in which case it may require Ehhanced Security Monitoring enabled at the account level, but a Development environment does not have that requirement).
 
-This is the scenario we are exploring here, a separate Databricks account is use for each environment. There are 3 environmens - Dev, Test and Prod, and each can have multiple workspaces. Here are some high level environment properties are:
+This is the scenario we are exploring here; a separate Databricks account is use for each environment. There are 3 environmens - Dev, Test and Prod, and each can have multiple workspaces. Here are some high level environment properties are:
 
 - Workspaces in Test and Prod require more rigid controls, e.g. only certain resources with only a subset of pre-configured options could be created there
 - Test workspaces are disposable; they are created and dropped regularly 
 - Dev workspaces are more diverse diverse in terms of features they use and configurations, e.g. `ws-1` in Dev may use real-time model serving whereas `ws-2` workspace may not require any ML/AI capabilities
+
+Here is a diagram showing what we are aiming to achieve. 
+***Note:** only a subset of components shown here may deployed by each project.*
+
+
+![Target architecture](./architecture.png)
+
+
 
 ## Designs
 
