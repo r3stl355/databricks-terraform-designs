@@ -9,7 +9,7 @@ locals {
 
 module "metastore" {
   
-  source = "../../../../../modules/aws/metastore"
+  source = "../../../../../modules/metastore"
   metastore_params  = local.metastore_params
   providers = {
     databricks.account = databricks.account
@@ -29,7 +29,7 @@ module "ws_1" {
 }
 
 module "ws_1_cluster" {
-  source = "../../../../../modules/aws/cluster"
+  source = "../../../../../modules/cluster"
   cluster_params = local.workspace_params.ws_1.cluster_params  
   providers = {
     databricks.workspace = databricks.ws_1
@@ -38,7 +38,7 @@ module "ws_1_cluster" {
 }
 
 module "ws_1_admin" {
-  source = "../../../../../modules/aws/workspace-admin"
+  source = "../../../../../modules/workspace-admin"
   workpace_admin_params = local.workspace_params.ws_1.workpace_admin_params  
   providers = {
     databricks.workspace = databricks.ws_1
@@ -59,7 +59,7 @@ module "ws_2" {
 }
 
 module "ws_2_cluster" {
-  source = "../../../../../modules/aws/cluster"
+  source = "../../../../../modules/cluster"
   cluster_params = local.workspace_params.ws_2.cluster_params  
   providers = {
     databricks.workspace = databricks.ws_2
@@ -68,7 +68,7 @@ module "ws_2_cluster" {
 }
 
 module "ws_2_admin" {
-  source = "../../../../../modules/aws/workspace-admin"
+  source = "../../../../../modules/workspace-admin"
   workpace_admin_params = local.workspace_params.ws_2.workpace_admin_params  
   providers = {
     databricks.workspace = databricks.ws_2

@@ -5,15 +5,15 @@ locals {
 }
 
 module "cluster" {
-  source          = "../../../../../../../../modules/aws/cluster"
-  cluster_params  = local.cluster_params  
+  source          = "../../../../../../../../modules/cluster"
+  cluster_params  = local.cluster_params
   providers = {
     databricks.workspace = databricks.workspace
   } 
 }
 
 module "admin" {
-  source                = "../../../../../../../../modules/aws/workspace-admin"
+  source                = "../../../../../../../../modules/workspace-admin"
   workpace_admin_params = local.workpace_admin_params  
   providers = {
     databricks.workspace = databricks.workspace

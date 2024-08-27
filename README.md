@@ -22,7 +22,8 @@ This is the scenario we are exploring here; a separate Databricks account is use
 - Dev workspaces are more diverse diverse in terms of features they use and configurations, e.g. `ws-1` in Dev may use real-time model serving whereas `ws-2` workspace may not require any ML/AI capabilities
 
 Here is a diagram showing what we are aiming to achieve. 
-***Note:** only a subset of components shown here may deployed by each project.*
+
+***Note:** only a subset of components shown here may be deployed by each project.*
 
 
 ![Target architecture](./architecture.png)
