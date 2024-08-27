@@ -64,9 +64,12 @@ Here is a diagram showing what we are aiming to achieve.
     - Pros: fully independent deployments
     - Cons: code repetition, more maintenance as the number of deployments grow
 
-- `dry`: the design consists of shared Terraform modules and an independent configuration per deployment (plus, if necessary, any additional custom resources which are not provided by the modules). This implementation requires additional tooling because the functionality is not supported by Terraform (closest Terraform tool is probably [CDK for Terraform](https://developer.hashicorp.com/terraform/cdktf) but it is still unstable and may not be suitable for production deployments), we selected [Terragrunt](https://terragrunt.gruntwork.io/) for that but there are other tools that could provide similar functionality (or just a custom shell script).  
+- `dry`: the design consists of shared Terraform modules and an independent configuration per deployment (plus, if necessary, any additional custom resources which are not provided by the modules). This implementation requires additional tooling because the functionality is not supported by Terraform (closest Terraform tool is probably [CDK for Terraform](https://developer.hashicorp.com/terraform/cdktf) but it is still unstable and may not be suitable for production deployments), we selected [Terragrunt](https://terragrunt.gruntwork.io/) for that but there are other tools that could provide similar functionality. 
     - Pros: best practice for designing multi-part solutions (DRY - don't repeat yourself), less code duplication
     - Cons: requires additional tooling, may result in addition deployment-specific resources if the shared modules do not support those
+
+    Alternatively, if you don't have access to those tools for some reason (e.g. if your environment is under a strict control in terms of tools that can be used) but can write code in some language then you can easily develop your own custom tool. It does not have to have all the features of tools like Terragrunt but only enough to cover your needs. We have included an example of such a tool, called [Hydrator], that we built for this project in Python. All you need to use it is Python (and Terraform of course). For more information see [README](granular/aws/dry/hydrator/README.md) in `granular/aws/dry/hydrator`
+
 
 ## Conclusion
 
@@ -86,7 +89,7 @@ A `config.sh` file sets environmental variables that can be used to configure co
 
 ### Execution
 
-Most of the deployments here use Terraform direcltly, except for those using `dry` approach - those use Terragrunt. 
+Most of the deployments here use Terraform direcltly, except for those using `dry` approach - you can use either Terragrunt or Hydrator for those.
 
 - For Terraform:
 ```
@@ -99,6 +102,12 @@ terraform apply
 ```
 terragrunt plan
 terragrunt apply
+```
+
+- For Hydrator (for `account` deployment, for more examples see [Hydrator](granular/aws/dry/hydrator))
+```
+python ../../../hydrator/hydrator.py plan
+python ../../../hydrator/hydrator.py apply
 ```
 
 ## Disclaimer
