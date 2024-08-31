@@ -1,5 +1,4 @@
 {
-	"workspace_url": "<workspace-url-here",
 	"cluster_params": {
 		"cluster-1": {
 			"cluster_name": "cluster-1",

@@ -32,17 +32,18 @@ source config.sh
 ```
 cd granular/aws/dry/_config/Prod/account
 python ../../../hydrator/hydrator.py plan
-python ../../../hydrator/hydrator.py plan
+python ../../../hydrator/hydrator.py apply
 ```
 
 4. Create the workspace
 ```
 cd granular/aws/dry/_config/Prod/workspaces/ws-1/workspace
 python ../../../../../hydrator/hydrator.py plan
-python ../../../../../hydrator/hydrator.py plan
+python ../../../../../hydrator/hydrator.py apply
 ```
 
-5. Apply additional config 
+***TODO:*** remove this after implementing `terraform_remote_state` lookup
+4.2 Apply additional config 
 - Take a note of the `workspace_url` output and set the value of `worspace_url` property in `granular/aws/dry/_config/Prod/workspaces/ws-1/workspace-items/variables.json`
 - Lookup the `databricks_token` in the `_hydrator/terraform.tfstate` file and use it to set the value of `TF_VAR_databricks_token` in the `setup.sh`
 - Re-apply the configuration again
@@ -50,14 +51,14 @@ python ../../../../../hydrator/hydrator.py plan
 source config.sh
 ```
 
-6. Create the workspace items
+5. Create the workspace items
 ```
 cd granular/aws/dry/_config/Prod/workspaces/ws-1/workspace-items
 python ../../../../../hydrator/hydrator.py plan
 python ../../../../../hydrator/hydrator.py apply
 ```
 
-7. Clean up
+6. Clean up
 ```
 cd granular/aws/dry/_config/Prod/workspaces/ws-1/workspace-items
 python ../../../../../hydrator/hydrator.py destroy
