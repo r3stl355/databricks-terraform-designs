@@ -7,10 +7,7 @@ All the DRY designs in the repo can be executed by this tool (or Terragrunt of c
 ## Requirements
 
 - Requirements defined in the main [README](../../../../README.md) except for Terragrunt (you don't need that one)
-- Python. Install the dependencies by running
-```
-pip install -f requirements.txt
-```
+- Python
 
 ### Quick start
 

@@ -4,7 +4,7 @@ import shutil
 from datetime import datetime as dt
 import logging
 from enum import StrEnum, auto
-import regex
+import re
 from pathlib import Path
 import json
 
@@ -99,11 +99,13 @@ class Hydrator:
         [shutil.copy(f, RUN_DIR) for f in self.files]
         
         # Resolve relative paths in modules
+        log(f'Resolving module paths')
         for f in self.files:
             path_in_run = RUN_DIR / f.name
             txt = path_in_run.read_text()
-            res = regex.findall('module\s*"[^"]*"\s*\{([^}]*|\{[^}]*\})*(source\s*=\s*"([^"]*)")', txt, regex.IGNORECASE | regex.MULTILINE)
+            res = re.findall('module\s*"[^"]+"\s*\{([^}]+|\{[^}]*\})[^}]*(source\s*=\s*"([^"]+)")', txt, re.IGNORECASE | re.MULTILINE)
             if res:
+                log(f'In file: {f}')
                 for p in res:
                     source_path = (f.parent / p[2]).resolve().absolute()
                     rel_path = os.path.relpath(source_path, RUN_DIR)
@@ -113,27 +115,30 @@ class Hydrator:
         return self
     
     def _parse_config(self):
-        self._reset()
+        self._reset()   
 
         f = f"./{CONFIG_FILE}"
         if not CONFIG_FILE.exists():
             raise FileNotFoundError(f'{f} is not found')
 
         config_str = CONFIG_FILE.read_text()
-        flags = regex.IGNORECASE | regex.MULTILINE | regex.DOTALL
+        flags = re.IGNORECASE | re.MULTILINE | re.DOTALL
 
         # One way to parse HCL is by converting it to JSON
-        config = regex.subn('\s*#.*', '', config_str)                              # remove comments
-        config = regex.subn('\${', SUB_REPLACE, config[0], flags)                   # temporarily mask interpolation (start of)
-        config = regex.subn('"', QUOTE_REPLACE, config[0], flags)                   # temporarily mask double quotes
-        config = regex.subfn('([^\s\n=\$]+)\s*=', ',"{1}":', config[0], flags)      # replace `name =` with `,"name":`
-        config = regex.subfn('([^\s\n:{]+)\s*{', ',"{1}": {{', config[0], flags)    # replace `name {` with `,"name": {`
-        config = regex.subfn(':\s*([^\s\d"{][^\n$]*)', ': "{1}"', config[0], flags) # wrap simple non-numeric values into double quotes
-        config = regex.subn('\s*\n\s*', '', config[0], flags)                       # remove empty space
-        config = regex.subn('{,', '{', config[0], flags)                            # remove extra commas after `{` (introduced by previous substitutions)
-        config = regex.subn('^,', '', config[0], flags)                             # remove extra commas at the start of line
-        config = regex.subn('"\^\^', '"', config[0], flags)                         # remove extra double quotes introduced earlier (from the string start)
-        config = regex.subn('\^\^"', '"', config[0], flags)                         # remove extra double quotes from string ends
+        config = re.subn('\s*#[^\n]*', '', config_str)                          # remove comments
+        config = re.subn('\${', SUB_REPLACE, config[0], flags)                  # temporarily mask interpolation (start of)
+        config = re.subn('"', QUOTE_REPLACE, config[0], flags)                  # temporarily mask double quotes
+        # config = re.subfn('([^\s\n=\$]+)\s*=', ',"{1}":', config[0], flags)      # replace `name =` with `,"name":`
+        # config = re.subfn('([^\s\n:{]+)\s*{', ',"{1}": {{', config[0], flags)    # replace `name {` with `,"name": {`
+        # config = re.subfn(':\s*([^\s\d"{][^\n$]*)', ': "{1}"', config[0], flags) # wrap simple non-numeric values into double quotes
+        config = re.subn('([^\s\n=\$]+)\s*=', ',"\\1":', config[0], flags)      # replace `name =` with `,"name":`
+        config = re.subn('([^\s\n:{]+)\s*{', ',"\\1": {', config[0], flags)     # replace `name {` with `,"name": {`
+        config = re.subn(':\s*([^\s\d"{][^\n$]*)', ': "\\1"', config[0], flags) # wrap simple non-numeric values into double quotes
+        config = re.subn('\s*\n\s*', '', config[0], flags)                      # remove empty space
+        config = re.subn('{,', '{', config[0], flags)                           # remove extra commas after `{` (introduced by previous substitutions)
+        config = re.subn('^,', '', config[0], flags)                            # remove extra commas at the start of line
+        config = re.subn('"\^\^', '"', config[0], flags)                        # remove extra double quotes introduced earlier (from the string start)
+        config = re.subn('\^\^"', '"', config[0], flags)                        # remove extra double quotes from string ends
         conf_str = config[0].replace(': "true"', ': true').replace(': "false"', ': false')  # unwrap booleans
         config = json.loads(f"{{{conf_str}}}")
 
@@ -246,7 +251,7 @@ class Hydrator:
     def _is_function(self, value: str) -> bool:
         if not value.startswith('"'):
             for func in KNOWN_FUNCTIONS:
-                if regex.search(f'^{func}\s*\(', value):
+                if re.search(f'^{func}\s*\(', value):
                     return True
         return False
 
@@ -254,9 +259,9 @@ class Hydrator:
         """ Interpolate the string by replacing all the occurrences of references to locals only"""
 
         # This is a string interpolation so must include `${...}`
-        pattern = "(\$\{local.([^\s}]*)\})"
+        pattern = "(\$\{local.([^\s}]+)\})"
         while True:
-            res = regex.search(pattern, value_str, regex.IGNORECASE)
+            res = re.search(pattern, value_str, re.IGNORECASE)
             if res:
                 full_local = res.group(1)
                 key = res.group(2)
@@ -285,7 +290,7 @@ class Hydrator:
             func_str = value_str[j:]
             is_func = self._is_function(func_str)
             if not is_func:
-                raise LookupError(f'Unknown function in "{value}" at the position {i}')
+                raise LookupError(f'Unknown function in "{func_str}" at the position {i}')
             
             in_string = False
             while (value_str[j] != '}' or in_string) and j < len(value_str):
@@ -310,7 +315,7 @@ class Hydrator:
         log(f'Extracting function from: {value}')
 
         # Fancy regexes like `'([^{(\s]+)\s*\(([^)]*)(\)*\s*)*'` won't be sufficient here, e.g. for nested functions, safer to parse by walking along
-        lookup = regex.search(f'(^([^\s\(]*)\s*\()', value)
+        lookup = re.search(f'(^([^\s\(]+)\s*\()', value)
         if not lookup:
             raise ValueError(f'Invalid function {value}')
         func = lookup.group(2)
@@ -344,7 +349,7 @@ class Hydrator:
     def _exec_function(self, func_str: str):
         """Execute a given function"""
 
-        lookup = regex.search(f'(^([^\s\(]*)\s*\()', func_str)
+        lookup = re.search(f'(^([^\s\(]+)\s*\()', func_str)
         if not lookup:
             raise ValueError(f'Invalid function {func_str}')
         func = lookup.group(2)
