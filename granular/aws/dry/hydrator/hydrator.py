@@ -22,14 +22,23 @@ class Operation(StrEnum):
                 return member
         return None
 
-class NODE_TYPE(StrEnum):
-    LOCALS = auto()
+class BLOCK(StrEnum):
     INPUTS = auto()
+    INCLUDE = auto()
+    LOCALS = auto()
+    REMOTE_STATE = auto()
+    TERRAFORM = auto()
+    def __repr__(self):
+        return self.as_key()
+    
+    def as_key(self):
+        return self.value.lower()
 
 CONFIG_FILE = Path('terragrunt.hcl')
 RUN_DIR = Path('_hydrator')
 SUB_REPLACE = '%|||||'
 QUOTE_REPLACE = '`````'
+INC_PREFIX = 'include_'
 TF_RUN_FORMAT = 'cd _hydrator && terraform {}'
 LOG_LEVEL = logging.INFO
 
@@ -40,10 +49,7 @@ def log(msg: str, level=logging.DEBUG):
 class Hydrator:
     def __init__(self, operation: str):
         self.operation = Operation(operation)
-        self.source = None
-        self.locals = {}
-        self.inputs = {}
-        self.files = []
+        self.config = None
 
     def run(self):
         if self.operation == Operation.DESTROY:
@@ -57,19 +63,14 @@ class Hydrator:
             self._tf_run(Operation.INIT)
         return self
 
-    def _reset(self):
-        self.source = None
-        self.locals = {}
-        self.inputs = {}
-        self.files = []
-
     def _tf_run(self, op: Operation):
         os.system(TF_RUN_FORMAT.format(op.name.lower()))
 
     def _set_vars(self):
-        if len(self.inputs) > 0:
+        inputs = self.config.get_block(BLOCK.INPUTS)
+        if inputs is not None and len(inputs) > 0:
            dest = RUN_DIR / 'hydrator.auto.tfvars.json' 
-           dest.write_text(json.dumps(self.inputs))
+           dest.write_text(json.dumps(inputs))
         return self
 
     def _copy(self):
@@ -78,15 +79,17 @@ class Hydrator:
             RUN_DIR.mkdir()
 
         self.files = []
-        tf_dir = Path(self.source)
-        for f in tf_dir.glob('*'):
+
+        # `terraform` block must have a `source` attribute
+        tf_source = Path(self.config.get_block(BLOCK.TERRAFORM)['source'])
+        for f in tf_source.glob('*'):
             if f.is_file():
                 if f.suffix.lower() in ['.tfstate']:
-                    raise FileExistsError(f"'{tf_dir}' directory contains a state file, cannot apply a Terraform template with existing state")
+                    raise FileExistsError(f"'{tf_source}' directory contains a state file, cannot apply a Terraform template with existing state")
                 elif f.suffix.lower() in ['.tf', '.tfvars', '.json']:
                     self.files.append(f)
         if len(self.files) == 0:
-            raise RuntimeError(f'Teffaform files not found in {tf_dir.absolute}')
+            raise RuntimeError(f'Teffaform files not found in {tf_source.absolute()}')
 
         for f in Path('./').glob('*'):
             if f.is_file():
@@ -98,12 +101,12 @@ class Hydrator:
                     self.files.append(f)
         [shutil.copy(f, RUN_DIR) for f in self.files]
         
-        # Resolve relative paths in modules
+        # Resolve module relative paths
         log(f'Resolving module paths')
         for f in self.files:
             path_in_run = RUN_DIR / f.name
             txt = path_in_run.read_text()
-            res = re.findall('module\s*"[^"]+"\s*\{([^}]+|\{[^}]*\})[^}]*(source\s*=\s*"([^"]+)")', txt, re.IGNORECASE | re.MULTILINE)
+            res = re.findall('module\s+"[^"]+"\s*\{([^}]+|\{[^}]*\})[^}]*(source\s*=\s*"([^"]+)")', txt, re.IGNORECASE | re.MULTILINE)
             if res:
                 log(f'In file: {f}')
                 for p in res:
@@ -112,25 +115,73 @@ class Hydrator:
                     txt = txt.replace(p[1], f'source = "{rel_path}"')
                     path_in_run.write_text(txt)
 
+        # Set the remote state if needed
+        remote_state = self.config.get_block(BLOCK.REMOTE_STATE)
+        if remote_state:
+            log('Setting remote state')
+            backend = remote_state['backend']
+            for f in self.files:
+                path_in_run = RUN_DIR / f.name
+                txt = path_in_run.read_text()
+                res = re.search('(backend\s+"([^"]+)"\s+\{(([^}{]*|\{[^}]*\})[^}]*)\})', txt, re.IGNORECASE | re.MULTILINE)
+                if res:
+                    log(f'In file: {f}')
+                    if res[2] != backend:
+                        RuntimeError(f'Invalid backend, expected {res[1]}, got {backend}')
+                    if len(res[3].strip()) > 0:
+                        RuntimeError(f'Backend configuration must be empty, found {res[2]}')
+                    
+                    # TODO: improve to handle non-string data types if provided, not needed for S3 now
+                    hcl = f'\n    '.join([f'{k} = "{v}"' for k, v in remote_state['config'].items()])
+                    txt = txt.replace(res[1], f'backend "{backend}" {{\n    {hcl}\n  }}')
+                    path_in_run.write_text(txt)
+
         return self
     
     def _parse_config(self):
-        self._reset()   
+        # self._reset()   
+        self.config = TerragruntConfig(CONFIG_FILE)
+        log(f'Parsed config: {self.config}')
+        return self
 
-        f = f"./{CONFIG_FILE}"
-        if not CONFIG_FILE.exists():
-            raise FileNotFoundError(f'{f} is not found')
+class TerragruntConfig:
+    def __init__(self, config_file: Path, required_blocks=[BLOCK.TERRAFORM]):
+        self.config_file = config_file
+        self.required_blocks = required_blocks
+        self.config = {}
 
-        config_str = CONFIG_FILE.read_text()
+        # TODO: refactor - remove this object level property
+        self.locals = {}
+        self.known_functions = {
+            'get_env': self._get_env, 
+            'file': self._file, 
+            'find_in_parent_folders': self._find_in_parent_folders,
+            'get_terragrunt_dir': self._get_terragrunt_dir,
+            'jsondecode': self._jsondecode,
+            'path_relative_to_include': self._path_relative_to_include
+        }
+
+        self._parse_config()
+
+    def __repr__(self) -> str:
+        return str(self.config)
+
+    def get_block(self, block: BLOCK):
+        return self.config.get(block.as_key(), None)
+
+    def _parse_config(self):
+
+        if not self.config_file.exists():
+            raise FileNotFoundError(f'{self.config_file} is not found')
+
+        config_str = self.config_file.read_text()
         flags = re.IGNORECASE | re.MULTILINE | re.DOTALL
 
         # One way to parse HCL is by converting it to JSON
         config = re.subn('\s*#[^\n]*', '', config_str)                          # remove comments
         config = re.subn('\${', SUB_REPLACE, config[0], flags)                  # temporarily mask interpolation (start of)
+        config = re.subn('(^|\n)include\s+"([^\s"]+)"\s*{', INC_PREFIX + '\\2 {', config[0], flags)     # parse imports: `import "name" {` with `import_name {`
         config = re.subn('"', QUOTE_REPLACE, config[0], flags)                  # temporarily mask double quotes
-        # config = re.subfn('([^\s\n=\$]+)\s*=', ',"{1}":', config[0], flags)      # replace `name =` with `,"name":`
-        # config = re.subfn('([^\s\n:{]+)\s*{', ',"{1}": {{', config[0], flags)    # replace `name {` with `,"name": {`
-        # config = re.subfn(':\s*([^\s\d"{][^\n$]*)', ': "{1}"', config[0], flags) # wrap simple non-numeric values into double quotes
         config = re.subn('([^\s\n=\$]+)\s*=', ',"\\1":', config[0], flags)      # replace `name =` with `,"name":`
         config = re.subn('([^\s\n:{]+)\s*{', ',"\\1": {', config[0], flags)     # replace `name {` with `,"name": {`
         config = re.subn(':\s*([^\s\d"{][^\n$]*)', ': "\\1"', config[0], flags) # wrap simple non-numeric values into double quotes
@@ -141,41 +192,78 @@ class Hydrator:
         config = re.subn('\^\^"', '"', config[0], flags)                        # remove extra double quotes from string ends
         conf_str = config[0].replace(': "true"', ': true').replace(': "false"', ': false')  # unwrap booleans
         config = json.loads(f"{{{conf_str}}}")
-
         log(f'Config: {config}')
 
-        tf = config.get('terraform', None)
-        if tf is None or tf.get('source', None) is None:
+        # If `terraform` node is required it must have `source` attribute
+        block = BLOCK.TERRAFORM
+        block_key = block.as_key()
+        tf = config.get(block_key, None)
+        if block in self.required_blocks and (tf is None or tf.get('source', None) is None):
             raise LookupError(f'Reference to source terraform template is not found')
-        self.source = tf.get('source').replace(QUOTE_REPLACE, '')
+        if tf is not None:
+            tf['source'] = tf.get('source').replace(QUOTE_REPLACE, '')
+            self.config[block_key] = tf
+        log(f'{block_key}: {tf}')
 
-        # Resolve locals
-        _ = self._resolve(config.get('locals', None), is_recursive=False)
-        log(f'Locals: {self.locals}')
+        # Following nodes are processed in the common way, must start with `locals`
+        for block in [BLOCK.LOCALS, BLOCK.INPUTS, BLOCK.REMOTE_STATE]:
+            block_key = block.as_key()
+            _, res = self._resolve(config.get(block_key, None), block_type=block, is_recursive=False)
 
-        # Resolve inputs
-        _, self.inputs = self._resolve(config.get('inputs', None), node_type=NODE_TYPE.INPUTS, is_recursive=False)
-        log(f'Inputs: {self.inputs}')
+            # These are top level blocks, do not store null for them
+            if res:
+                self.config[block_key] = res if res is not None else {}
+            log(f'{block_key}: {res}')
+
+        # Resolve includes
+        block = BLOCK.INCLUDE
+        includes = {}
+        for k in config:
+            if k.startswith(INC_PREFIX):
+                include = self._parse_include(config[k])
+
+                # Extract remote state information separately
+                remote_state_key = BLOCK.REMOTE_STATE.as_key()
+                if remote_state_key in include:
+                    self.config[remote_state_key] = include[remote_state_key]
+                includes[k[len(INC_PREFIX):]] = include
+        if len(includes):
+            self.config[block.as_key()] = includes
 
         return self
 
-    def _resolve(self, value, node_type: NODE_TYPE=NODE_TYPE.LOCALS, is_recursive=False):
+    def _parse_include(self, config: dict) -> dict:
+        """Parse the `include "name ` directive"""
+
+        # `must have a `path` attribute
+        path = config.get('path', None)
+        if path is None:
+            raise LookupError('include must have a `path`')
+        
+        # Resolve path, can be a function or local
+        _, path = self._resolve(path, block_type=BLOCK.INCLUDE)
+        include = TerragruntConfig(Path(path), required_blocks=[])
+
+        return include.config
+
+    def _resolve(self, value, block_type: BLOCK=BLOCK.LOCALS, is_recursive=False):
         """Return a value with all the locals and functions resolved"""
 
+        # Nothing to resolve
         if value is None:
-            return False, None
+            return True, None
 
-        local_must_exist=(node_type != NODE_TYPE.LOCALS)
+        local_must_exist=(block_type != BLOCK.LOCALS)
 
         if isinstance(value, dict):
             resolved = {}
             to_process = list(value.keys())
             while to_process:
                 key = to_process.pop(0)
-                is_ok, res = self._resolve(value[key], node_type=node_type, is_recursive=True)
+                is_ok, res = self._resolve(value[key], block_type=block_type, is_recursive=True)
                 if is_ok:
                     resolved[key] = res
-                    if node_type == NODE_TYPE.LOCALS and not is_recursive:
+                    if block_type == BLOCK.LOCALS and not is_recursive:
                         # Store only top level locals
                         self.locals[key] = res
                 elif not is_recursive:
@@ -193,7 +281,7 @@ class Hydrator:
         if isinstance(value, list):
             resolved = []
             for v in value:
-                is_ok, res = self._resolve(v, node_type=node_type, is_recursive=True)
+                is_ok, res = self._resolve(v, block_type=block_type, is_recursive=True)
                 if is_ok:
                     resolved.append(res)
                 else:
@@ -250,7 +338,7 @@ class Hydrator:
 
     def _is_function(self, value: str) -> bool:
         if not value.startswith('"'):
-            for func in KNOWN_FUNCTIONS:
+            for func in self.known_functions:
                 if re.search(f'^{func}\s*\(', value):
                     return True
         return False
@@ -319,7 +407,7 @@ class Hydrator:
         if not lookup:
             raise ValueError(f'Invalid function {value}')
         func = lookup.group(2)
-        if func not in KNOWN_FUNCTIONS:
+        if func not in self.known_functions:
             raise ValueError(f'Uknown function {func}')
         
         i = len(lookup.group(1)) - 1
@@ -353,21 +441,22 @@ class Hydrator:
         if not lookup:
             raise ValueError(f'Invalid function {func_str}')
         func = lookup.group(2)
-        if func not in KNOWN_FUNCTIONS:
+        if func not in self.known_functions:
             raise ValueError(f'Uknown function {func}')
 
         log(f'Executing: {func_str}')
         
-        param_str = func_str[len(lookup.group(1)):-1]
+        param_str = func_str.strip()[len(lookup.group(1)):-1]
+        log(param_str)
         if len(param_str) == 0:
             # Function without parameters
-            return True, KNOWN_FUNCTIONS[func]()
+            return True, self.known_functions[func]()
         
         if param_str.count(',') == 0:
             # A single parameter
             is_ok, res = self._resolve(param_str)
             if is_ok:
-                return True, KNOWN_FUNCTIONS[func](res)
+                return True, self.known_functions[func](res)
             return False, None
         
         params = []
@@ -404,29 +493,37 @@ class Hydrator:
             else:
                 return False, None
             
-        return True, KNOWN_FUNCTIONS[func](*resolved_params)
+        return True, self.known_functions[func](*resolved_params)
 
 
-def get_env(name: str, default=None) -> str:
-    val = os.environ.get(name, default)
-    return val
+    def _get_env(self, name: str, default=None) -> str:
+        val = os.environ.get(name, default)
+        return val
 
-def get_terragrunt_dir() -> str:
-    return str(Path(".").absolute())
+    def _get_terragrunt_dir(self) -> Path:
+        return Path(".").absolute().resolve()
+        # return str(Path(".").absolute())
 
-def file(path: str) -> str:
-    p = Path(path.strip(' "'))
-    return p.read_text()
+    def _file(self, path: str) -> str:
+        p = Path(path.strip(' "'))
+        return p.read_text()
 
-def jsondecode(obj: str) -> dict:
-    return json.loads(obj)
+    def _jsondecode(self, obj: str) -> dict:
+        return json.loads(obj)
 
-KNOWN_FUNCTIONS = {
-    'get_env': get_env, 
-    'file': file, 
-    'get_terragrunt_dir': get_terragrunt_dir,
-    'jsondecode': jsondecode
-    }
+    def _find_in_parent_folders(self, name='terragrunt.hcl') -> Path:
+        def find_recursive(parent: Path):
+            f = parent / name
+            if f.exists():
+                return f 
+            return find_recursive(parent / '../')
+        
+        return find_recursive(Path('../'))
+
+    def _path_relative_to_include(self):
+        caller = self._get_terragrunt_dir()
+        return caller.relative_to(self.config_file.parent.absolute().resolve())
+
 
 def get_args():
     parser = ArgumentParser(

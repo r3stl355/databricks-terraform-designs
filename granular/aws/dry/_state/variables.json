@@ -1,0 +1,10 @@
+{
+  "region": "eu-west-1",
+  "s3_remote_state_params": {
+    "bucket_name": "db-tf-remote-state",
+    "dynamodb_table_name": "db-tf-remote-state-lock",
+    "tags": {
+      "department": "dep-1"
+    }  
+  }
+}
