@@ -3,36 +3,53 @@ from argparse import ArgumentParser
 import shutil
 from datetime import datetime as dt
 import logging
-from enum import StrEnum, auto
+# from enum import StrEnum, auto
+from enum import Enum
 import re
 from pathlib import Path
 import json
 
+# class Operation(StrEnum):
+#     INIT = auto()
+#     PLAN = auto()
+#     APPLY = auto()
+#     DESTROY = auto()
+#     @classmethod
+#     def _missing_(cls, value):
+#         value = value.lower()
+#         for member in cls:
+#             if member.value == value:
+#                 return member
+#         return None
 
-class Operation(StrEnum):
-    INIT = auto()
-    PLAN = auto()
-    APPLY = auto()
-    DESTROY = auto()
+# class Block(StrEnum):
+#     INPUTS = auto()
+#     INCLUDE = auto()
+#     LOCALS = auto()
+#     REMOTE_STATE = auto()
+#     TERRAFORM = auto()
+
+class Operation(Enum):
+    INIT = 0
+    PLAN = 1
+    APPLY = 2
+    DESTROY = 3
     @classmethod
     def _missing_(cls, value):
         value = value.lower()
         for member in cls:
-            if member.value == value:
+            if member.name.lower() == value:
                 return member
         return None
-
-class BLOCK(StrEnum):
-    INPUTS = auto()
-    INCLUDE = auto()
-    LOCALS = auto()
-    REMOTE_STATE = auto()
-    TERRAFORM = auto()
-    def __repr__(self):
-        return self.as_key()
     
-    def as_key(self):
-        return self.value.lower()
+class Block(Enum):
+    INPUTS = 0
+    INCLUDE = 1
+    LOCALS = 2
+    REMOTE_STATE = 3
+    TERRAFORM = 4
+    def val(self):
+        return self.name.lower()
 
 CONFIG_FILE = Path('terragrunt.hcl')
 RUN_DIR = Path('_hydrator')
@@ -67,7 +84,7 @@ class Hydrator:
         os.system(TF_RUN_FORMAT.format(op.name.lower()))
 
     def _set_vars(self):
-        inputs = self.config.get_block(BLOCK.INPUTS)
+        inputs = self.config.get_block(Block.INPUTS)
         if inputs is not None and len(inputs) > 0:
            dest = RUN_DIR / 'hydrator.auto.tfvars.json' 
            dest.write_text(json.dumps(inputs))
@@ -81,7 +98,7 @@ class Hydrator:
         self.files = []
 
         # `terraform` block must have a `source` attribute
-        tf_source = Path(self.config.get_block(BLOCK.TERRAFORM)['source'])
+        tf_source = Path(self.config.get_block(Block.TERRAFORM)['source'])
         for f in tf_source.glob('*'):
             if f.is_file():
                 if f.suffix.lower() in ['.tfstate']:
@@ -116,7 +133,7 @@ class Hydrator:
                     path_in_run.write_text(txt)
 
         # Set the remote state if needed
-        remote_state = self.config.get_block(BLOCK.REMOTE_STATE)
+        remote_state = self.config.get_block(Block.REMOTE_STATE)
         if remote_state:
             log('Setting remote state')
             backend = remote_state['backend']
@@ -145,7 +162,7 @@ class Hydrator:
         return self
 
 class TerragruntConfig:
-    def __init__(self, config_file: Path, required_blocks=[BLOCK.TERRAFORM]):
+    def __init__(self, config_file: Path, required_blocks=[Block.TERRAFORM]):
         self.config_file = config_file
         self.required_blocks = required_blocks
         self.config = {}
@@ -167,9 +184,12 @@ class TerragruntConfig:
     def __repr__(self) -> str:
         return str(self.config)
 
-    def get_block(self, block: BLOCK):
-        return self.config.get(block.as_key(), None)
+    def get_block(self, block: Block):
+        return self.config.get(self._block_key(block), None)
 
+    def _block_key(self, block: Block) -> str:
+        return block.val()
+    
     def _parse_config(self):
 
         if not self.config_file.exists():
@@ -196,8 +216,8 @@ class TerragruntConfig:
         log(f'Config: {config}')
 
         # If `terraform` node is required it must have `source` attribute
-        block = BLOCK.TERRAFORM
-        block_key = block.as_key()
+        block = Block.TERRAFORM
+        block_key = self._block_key(block)
         tf = config.get(block_key, None)
         if block in self.required_blocks and (tf is None or tf.get('source', None) is None):
             raise LookupError(f'Reference to source terraform template is not found')
@@ -207,22 +227,23 @@ class TerragruntConfig:
         log(f'{block_key}: {tf}')
 
         # Resolve includes first (which seem to allow only fixed values, no functions or vars)
-        block = BLOCK.INCLUDE
+        block = Block.INCLUDE
+        block_key = self._block_key(block)
         includes = {}
         for k in config:
             if k.startswith(INC_PREFIX):
                 include = self._parse_include(config[k])
 
                 # Extract remote state information separately
-                remote_state_key = BLOCK.REMOTE_STATE.as_key()
-                if remote_state_key in include:
-                    self.config[remote_state_key] = include[remote_state_key]
+                remote_state_block_key = self._block_key(Block.REMOTE_STATE)
+                if remote_state_block_key in include:
+                    self.config[remote_state_block_key] = include[remote_state_block_key]
                 includes[k[len(INC_PREFIX):]] = include
-        self.config[block] = includes
+        self.config[block_key] = includes
 
         # Following nodes are processed in the common way, start with `locals`
-        for block in [BLOCK.LOCALS, BLOCK.INPUTS, BLOCK.REMOTE_STATE]:
-            block_key = block.as_key()
+        for block in [Block.LOCALS, Block.INPUTS, Block.REMOTE_STATE]:
+            block_key = self._block_key(block)
             _, res = self._resolve(config.get(block_key, None), block_type=block, is_recursive=False)
 
             # These are top level blocks, do not store null for them
@@ -241,19 +262,19 @@ class TerragruntConfig:
             raise LookupError('include must have a `path`')
         
         # Resolve path. Terragrunt allows functions for this but not `locals` 
-        _, path = self._resolve(path, block_type=BLOCK.INCLUDE)
+        _, path = self._resolve(path, block_type=Block.INCLUDE)
         include = TerragruntConfig(Path(path), required_blocks=[])
 
         return include.config
 
-    def _resolve(self, value, block_type: BLOCK=BLOCK.LOCALS, is_recursive=False):
+    def _resolve(self, value, block_type: Block=Block.LOCALS, is_recursive=False):
         """Return a value with all the locals and functions resolved"""
 
         # Nothing to resolve
         if value is None:
             return True, None
 
-        local_must_exist=(block_type != BLOCK.LOCALS)
+        local_must_exist=(block_type != Block.LOCALS)
 
         if isinstance(value, dict):
             resolved = {}
@@ -263,7 +284,7 @@ class TerragruntConfig:
                 is_ok, res = self._resolve(value[key], block_type=block_type, is_recursive=True)
                 if is_ok:
                     resolved[key] = res
-                    if block_type == BLOCK.LOCALS and not is_recursive:
+                    if block_type == Block.LOCALS and not is_recursive:
                         # Store only top level locals
                         self.locals[key] = res
                 elif not is_recursive:
@@ -342,7 +363,7 @@ class TerragruntConfig:
     def _get_include(self, key: str):
         if key.startswith('include.'):
             key = key[len('include.'):]
-        lookup = self.config[BLOCK.INCLUDE]
+        lookup = self.config[Block.INCLUDE]
         for k in key.split('.'):
             res = lookup.get(k, None)
             if res is None:
@@ -561,7 +582,7 @@ def get_args():
     )
     parser.add_argument(
         'operation',
-        default=Operation.PLAN.name.lower(),
+        default=Operation.PLAN.value,
         help=f'Terraform operation to run, one of {[op.name.lower() for op in list(Operation)]}'
     )
 
