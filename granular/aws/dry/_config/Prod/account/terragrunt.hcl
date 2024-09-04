@@ -8,7 +8,7 @@ locals {
 }
 
 include "remote" {
-  path = find_in_parent_folders("remote.hcl")
+  path = find_in_parent_folders("backend.hcl")
 }
 
 inputs = {
