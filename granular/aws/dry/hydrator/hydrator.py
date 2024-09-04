@@ -40,7 +40,7 @@ SUB_REPLACE = '%|||||'
 QUOTE_REPLACE = '`````'
 INC_PREFIX = 'include_'
 TF_RUN_FORMAT = 'cd _hydrator && terraform {}'
-LOG_LEVEL = logging.INFO
+LOG_LEVEL = logging.DEBUG
 
 def log(msg: str, level=logging.DEBUG):
     if LOG_LEVEL <= level:
@@ -158,7 +158,8 @@ class TerragruntConfig:
             'find_in_parent_folders': self._find_in_parent_folders,
             'get_terragrunt_dir': self._get_terragrunt_dir,
             'jsondecode': self._jsondecode,
-            'path_relative_to_include': self._path_relative_to_include
+            'path_relative_to_include': self._path_relative_to_include,
+            'merge': self._merge
         }
 
         self._parse_config()
@@ -205,17 +206,7 @@ class TerragruntConfig:
             self.config[block_key] = tf
         log(f'{block_key}: {tf}')
 
-        # Following nodes are processed in the common way, must start with `locals`
-        for block in [BLOCK.LOCALS, BLOCK.INPUTS, BLOCK.REMOTE_STATE]:
-            block_key = block.as_key()
-            _, res = self._resolve(config.get(block_key, None), block_type=block, is_recursive=False)
-
-            # These are top level blocks, do not store null for them
-            if res:
-                self.config[block_key] = res if res is not None else {}
-            log(f'{block_key}: {res}')
-
-        # Resolve includes
+        # Resolve includes first (which seem to allow only fixed values, no functions or vars)
         block = BLOCK.INCLUDE
         includes = {}
         for k in config:
@@ -227,8 +218,17 @@ class TerragruntConfig:
                 if remote_state_key in include:
                     self.config[remote_state_key] = include[remote_state_key]
                 includes[k[len(INC_PREFIX):]] = include
-        if len(includes):
-            self.config[block.as_key()] = includes
+        self.config[block] = includes
+
+        # Following nodes are processed in the common way, start with `locals`
+        for block in [BLOCK.LOCALS, BLOCK.INPUTS, BLOCK.REMOTE_STATE]:
+            block_key = block.as_key()
+            _, res = self._resolve(config.get(block_key, None), block_type=block, is_recursive=False)
+
+            # These are top level blocks, do not store null for them
+            if res:
+                self.config[block_key] = res if res is not None else {}
+            log(f'{block_key}: {res}')
 
         return self
 
@@ -240,7 +240,7 @@ class TerragruntConfig:
         if path is None:
             raise LookupError('include must have a `path`')
         
-        # Resolve path, can be a function or local
+        # Resolve path. Terragrunt allows functions for this but not `locals` 
         _, path = self._resolve(path, block_type=BLOCK.INCLUDE)
         include = TerragruntConfig(Path(path), required_blocks=[])
 
@@ -307,6 +307,10 @@ class TerragruntConfig:
                 else:
                     return False, None
             
+            if value.startswith('include.'):
+                v = self._get_include(value)
+                return v is not None, v
+                
             if value.startswith('"') and value.endswith('"'):
                 # This is a true string, strip the quotes
                 is_ok, res = self._replace_locals(value.strip('"'), local_must_exist=local_must_exist)
@@ -334,7 +338,18 @@ class TerragruntConfig:
             else:
                 lookup = res
         return res
-        
+
+    def _get_include(self, key: str):
+        if key.startswith('include.'):
+            key = key[len('include.'):]
+        lookup = self.config[BLOCK.INCLUDE]
+        for k in key.split('.'):
+            res = lookup.get(k, None)
+            if res is None:
+                break
+            else:
+                lookup = res
+        return res  
 
     def _is_function(self, value: str) -> bool:
         if not value.startswith('"'):
@@ -447,7 +462,6 @@ class TerragruntConfig:
         log(f'Executing: {func_str}')
         
         param_str = func_str.strip()[len(lookup.group(1)):-1]
-        log(param_str)
         if len(param_str) == 0:
             # Function without parameters
             return True, self.known_functions[func]()
@@ -459,31 +473,42 @@ class TerragruntConfig:
                 return True, self.known_functions[func](res)
             return False, None
         
-        params = []
-        i = 0
-
         if '${' in param_str:
             param_str = self._replace_functions(param_str)
+
+        params = []
+        i = 0
         while i < len(param_str):
+            if param_str[i] == ' ':
+                i += 1
+                continue
+
             if param_str[i] == '"':
                 j = i + 1
                 while j < len(param_str) and param_str[j] != '"':
                     j += 1
                 if j < len(param_str):
+                    # No trims here
                     params.append(param_str[i:j+1])
                 else:
                     raise RuntimeError(f'Unclosed string in {param_str} from position {i}')
-                j += 1
+                i = j + 1
+                if i < len(param_str) and param_str[i] == ',':
+                    i += 1
             elif self._is_function(param_str[i:]):
                 f = self._extract_function(param_str[i:])
                 params.append(f)
-                j = i + len(f)
+                i = i + len(f)
+                if i < len(param_str) and param_str[i] == ',':
+                    i += 1
+            elif param_str[i:].startswith('local.') or param_str[i:].startswith('include.'):
+                j = i + len('local.')
+                while j < len(param_str) and param_str[j] != ',':
+                    j += 1
+                params.append(param_str[i:j].strip())
+                i = j + 1
             else:
                 raise RuntimeError(f"Should never get here: {param_str}")
-            
-            while j < len(param_str) and param_str[j] in [' ', ',']:
-                j += 1
-            i = j
 
         resolved_params = []
         for p in params:
@@ -524,6 +549,11 @@ class TerragruntConfig:
         caller = self._get_terragrunt_dir()
         return caller.relative_to(self.config_file.parent.absolute().resolve())
 
+    def _merge(self, dest: dict, src: dict) -> dict:
+        # Do not update the destination dict directly, may end up re-writing state
+        res = dest.copy()
+        res.update(src)
+        return res
 
 def get_args():
     parser = ArgumentParser(

@@ -9,7 +9,7 @@ locals {
 }
 
 include "backend" {
-  path = find_in_parent_folders("${local.var_file_prefix}backend.hcl")
+  path = find_in_parent_folders("backend.hcl")
 }
 
 inputs = {
