@@ -5,7 +5,7 @@ locals {
   account_params    = jsondecode(var.account_params)
   metastore_params  = local.params.metastores
   workspace_params  = { for k, v in local.params.workspaces:
-    k => merge(v,  { metastore_id = [for m_name, m_id in module.metastore.metastores: m_id if m_name == v.metastore_id ][0]})
+    k =>  merge(v,  { metastore_id = [for m_name, m_id in module.metastore.metastores: m_id if m_name == v.metastore_name ][0] })
   }
 }
 

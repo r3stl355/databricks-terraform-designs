@@ -16,7 +16,7 @@
 			"region": "eu-west-1",
 			"workspace_name": "ws-1",
 			"vpc_cidr": "10.0.0.0/16",
-			"metastore_id": "metastore-eu",
+			"metastore_name": "metastore-eu",
 			"tags": {
 				"department": "dep-1"
 			},
@@ -37,7 +37,7 @@
 			"region": "us-east-2",
 			"workspace_name": "ws-2",
 			"vpc_cidr": "10.0.0.0/16",
-			"metastore_id": "metastore-us",
+			"metastore_name": "metastore-us",
 			"tags": {
 				"department": "dep-2"
 			},
