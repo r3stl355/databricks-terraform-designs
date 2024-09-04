@@ -1,7 +1,7 @@
-variable "var_file" {
+variable "var_file_prefix" {
     type        = string
-    description = "Name of the JSON file to load containing variable values"
-    default     = "variables.json"
+    description = "Prefix of the default `variables.json` file name containing variable values, e.g. `test.` to load values from `test.variables.json`"
+    default     = ""
 }
 
 # The account information should be provided as an invironmental variable. See README.md for an example

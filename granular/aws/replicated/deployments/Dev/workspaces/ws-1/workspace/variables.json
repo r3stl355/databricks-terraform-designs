@@ -1,9 +1,11 @@
 {
-	"region": "eu-west-1",
-	"workspace_name": "ws-1",
-	"vpc_cidr": "10.0.0.0/16",
-	"metastore_id": "<metastore-eu-id-here>",
-	"tags": {
-		"department": "dep-1"
-	}
+  "workspace_params": {
+    "region": "eu-west-1",
+    "workspace_name": "ws-1",
+    "vpc_cidr": "10.0.0.0/16",
+    "metastore_id": "metastore-eu",
+    "tags": {
+      "department": "dep-1"
+    }
+  }
 }

@@ -3,7 +3,8 @@ terraform {
 }
 
 locals {
-  var_file = get_env("TF_VAR_var_file", "variables.json")
+  var_file_prefix   = get_env("TF_VAR_var_file_prefix", "")
+  var_file          = "${local.var_file_prefix}variables.json"
 }
 
 inputs = {

@@ -1,5 +1,7 @@
 locals {
-  params = jsondecode(file("${path.root}/${var.var_file}"))
+  var_file_prefix   = var.var_file_prefix
+  var_file          = "${local.var_file_prefix}variables.json"
+  params            = jsondecode(file("${path.root}/${local.var_file}"))
 }
 
 module "s3_remote_state" {

@@ -3,8 +3,9 @@ terraform {
 }
 
 locals {
-  var_file  = get_env("TF_VAR_var_file", "variables.json")
-  params    = jsondecode(file("${get_terragrunt_dir()}/${local.var_file}"))
+  var_file_prefix   = get_env("TF_VAR_var_file_prefix", "")
+  var_file          = "${local.var_file_prefix}variables.json"
+  params            = jsondecode(file("${get_terragrunt_dir()}/${local.var_file}"))
   
   workspace_url         = local.params.workspace_url
   cluster_params        = local.params.cluster_params
