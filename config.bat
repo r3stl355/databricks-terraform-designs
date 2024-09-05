@@ -1,0 +1,2 @@
+export TF_VAR_var_file_prefix=
+export TF_VAR_account_params={"account_url": "https://accounts.cloud.databricks.com", "account_id": "<account-id-here>", "sp_client_id": "<sp-id-here>", "sp_client_secret": "<sp-secret-here>"}
