@@ -66,13 +66,13 @@ def log(msg: str, level=logging.DEBUG):
 class Hydrator:
     def __init__(self, operation: str):
         self.operation = Operation(operation)
-        self.config = None
+        self.config_parser = None
 
     def run(self):
         if self.operation == Operation.DESTROY:
             self._tf_run(self.operation)
         else:
-            self._parse_config()._copy()._set_vars()._init(self.operation == Operation.INIT)._tf_run(self.operation)
+            self.parse_config()._copy()._set_vars()._init(self.operation == Operation.INIT)._tf_run(self.operation)
 
     def _init(self, no_op=False):
         tf = RUN_DIR / '.terraform'
@@ -84,7 +84,7 @@ class Hydrator:
         os.system(TF_RUN_FORMAT.format(op.name.lower()))
 
     def _set_vars(self):
-        inputs = self.config.get_block(Block.INPUTS)
+        inputs = self.config_parser.get_block(Block.INPUTS)
         if inputs is not None and len(inputs) > 0:
            dest = RUN_DIR / 'hydrator.auto.tfvars.json' 
            dest.write_text(json.dumps(inputs))
@@ -98,7 +98,7 @@ class Hydrator:
         self.files = []
 
         # `terraform` block must have a `source` attribute
-        tf_source = Path(self.config.get_block(Block.TERRAFORM)['source'])
+        tf_source = Path(self.config_parser.get_block(Block.TERRAFORM)['source'])
         for f in tf_source.glob('*'):
             if f.is_file():
                 if f.suffix.lower() in ['.tfstate']:
@@ -128,12 +128,14 @@ class Hydrator:
                 log(f'In file: {f}')
                 for p in res:
                     source_path = (f.parent / p[2]).resolve().absolute()
-                    rel_path = os.path.relpath(source_path, RUN_DIR)
+
+                    # This should always use posix style separatator, even in Windows
+                    rel_path = os.path.relpath(source_path, RUN_DIR).replace(os.sep, '/')
                     txt = txt.replace(p[1], f'source = "{rel_path}"')
                     path_in_run.write_text(txt)
 
         # Set the remote state if needed
-        remote_state = self.config.get_block(Block.REMOTE_STATE)
+        remote_state = self.config_parser.get_block(Block.REMOTE_STATE)
         if remote_state:
             log('Setting remote state')
             backend = remote_state['backend']
@@ -155,15 +157,20 @@ class Hydrator:
 
         return self
     
-    def _parse_config(self):
-        # self._reset()   
-        self.config = TerragruntConfig(CONFIG_FILE)
-        log(f'Parsed config: {self.config}')
+    def parse_config(self):   
+        self.config_parser = TerragruntConfigParser(CONFIG_FILE)
+        log(f'Parsed config: {self.config_parser}')
         return self
 
-class TerragruntConfig:
-    def __init__(self, config_file: Path, required_blocks=[Block.TERRAFORM]):
-        self.config_file = config_file
+class TerragruntConfigParser:
+    def __init__(self, config_file_path: Path, config_str=None, required_blocks=[Block.TERRAFORM]):
+        self.config_file_path = config_file_path
+        if config_str is None:
+            if not config_file_path.exists():
+                raise FileNotFoundError(f'{config_file_path} is not found')
+
+            config_str = config_file_path.read_text()
+        self.config_str = config_str
         self.required_blocks = required_blocks
         self.config = {}
 
@@ -192,14 +199,10 @@ class TerragruntConfig:
     
     def _parse_config(self):
 
-        if not self.config_file.exists():
-            raise FileNotFoundError(f'{self.config_file} is not found')
-
-        config_str = self.config_file.read_text()
         flags = re.IGNORECASE | re.MULTILINE | re.DOTALL
 
         # One way to parse HCL is by converting it to JSON
-        config = re.subn('\s*#[^\n]*', '', config_str)                          # remove comments
+        config = re.subn('\s*#[^\n]*', '', self.config_str)                          # remove comments
         config = re.subn('\${', SUB_REPLACE, config[0], flags)                  # temporarily mask interpolation (start of)
         config = re.subn('(^|\n)include\s+"([^\s"]+)"\s*{', INC_PREFIX + '\\2 {', config[0], flags)     # parse imports: `import "name" {` with `import_name {`
         config = re.subn('"', QUOTE_REPLACE, config[0], flags)                  # temporarily mask double quotes
@@ -263,7 +266,8 @@ class TerragruntConfig:
         
         # Resolve path. Terragrunt allows functions for this but not `locals` 
         _, path = self._resolve(path, block_type=Block.INCLUDE)
-        include = TerragruntConfig(Path(path), required_blocks=[])
+
+        include = TerragruntConfigParser(Path(path), required_blocks=[])
 
         return include.config
 
@@ -568,7 +572,7 @@ class TerragruntConfig:
 
     def _path_relative_to_include(self):
         caller = self._get_terragrunt_dir()
-        return caller.relative_to(self.config_file.parent.absolute().resolve())
+        return caller.relative_to(self.config_file_path.parent.absolute().resolve())
 
     def _merge(self, dest: dict, src: dict) -> dict:
         # Do not update the destination dict directly, may end up re-writing state
