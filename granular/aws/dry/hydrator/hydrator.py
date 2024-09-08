@@ -57,7 +57,7 @@ SUB_REPLACE = '%|||||'
 QUOTE_REPLACE = '`````'
 INC_PREFIX = 'include_'
 TF_RUN_FORMAT = 'cd _hydrator && terraform {}'
-LOG_LEVEL = logging.DEBUG
+LOG_LEVEL = logging.INFO
 
 def log(msg: str, level=logging.DEBUG):
     if LOG_LEVEL <= level:
@@ -324,6 +324,7 @@ class TerragruntConfigParser:
 
             if value.startswith('local.'):
                 # For now assume this is a single value, not an operation. It can be a nested property lookup
+                log(f'Resolving local: {value}')
                 v = self._get_local(value)
                 if v is not None:
                     return True, v
@@ -552,7 +553,6 @@ class TerragruntConfigParser:
 
     def _get_terragrunt_dir(self) -> Path:
         return Path(".").absolute().resolve()
-        # return str(Path(".").absolute())
 
     def _file(self, path: str) -> str:
         p = Path(path.strip(' "'))
@@ -565,10 +565,13 @@ class TerragruntConfigParser:
         def find_recursive(parent: Path):
             f = parent / name
             if f.exists():
-                return f 
-            return find_recursive(parent / '../')
+                return f
+            if os.path.dirname(str(parent)) == str(parent):
+                # We are at the root, stop
+                raise FileNotFoundError(f'{name} not found')
+            return find_recursive((parent / '../').resolve())
         
-        return find_recursive(Path('../'))
+        return find_recursive(Path('../').resolve())
 
     def _path_relative_to_include(self):
         caller = self._get_terragrunt_dir()
