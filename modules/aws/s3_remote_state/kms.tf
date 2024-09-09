@@ -1,4 +1,5 @@
 resource "aws_kms_key" "state" {
+  count                   = var.s3_remote_state_params.add_kms_key ? 1 : 0
   provider                = aws.regional
   description             = "Symmetric encryption KMS key for Terraform state encryption"
   enable_key_rotation     = false

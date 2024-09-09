@@ -2,6 +2,7 @@
   "region": "eu-west-1",
   "s3_remote_state_params": {
     "bucket_name": "db-tf-remote-state",
+    "add_kms_key": false,
     "dynamodb_table_name": "db-tf-remote-state-lock",
     "tags": {
       "department": "dep-1"

@@ -62,3 +62,9 @@ python ../../../../../hydrator/hydrator.py destroy
 cd granular/aws/dry/_config/Prod/account
 python ../../../hydrator/hydrator.py destroy
 ```
+
+## Run Tests
+
+```
+python -m unittest test_hydrator.py
+```

@@ -27,6 +27,9 @@
 # Ignored vscode files
 .vscode/
 
+# Python
+__pycache__
+
 # Local files
 OLD_*
 WIP_*

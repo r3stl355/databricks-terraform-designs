@@ -57,6 +57,24 @@ class TestHydrator(unittest.TestCase):
         self.assertTrue(is_ok)
         self.assertEqual(str(res), f'1-{parent.name}-2')
 
+    def test_find_in_parent_folders(self):
+        # Find a first file in the parents
+        p = str(Path('../').resolve().absolute())
+        to_find = None
+        while len(p) > 0:
+            for f in os.listdir(p):
+                f_path = os.path.join(p, f)
+                if os.path.isfile(f_path):
+                    to_find = (f, f_path)
+                    break
+            if to_find is not None:
+                break
+            p = os.path.split(p)[0]
+        if to_find is not None:
+            is_ok, res = self.config._resolve(f'find_in_parent_folders("{to_find[0]}")')
+            self.assertTrue(is_ok)
+            self.assertEqual(str(res), to_find[1])
+
     def test_find_in_parent_folders_stops_at_root(self):
         with self.assertRaises(FileNotFoundError):
             is_ok, res = self.config._resolve(f'find_in_parent_folders("non-existing-file.tmp")')

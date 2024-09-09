@@ -1,4 +1,5 @@
 resource "aws_dynamodb_table" "basic-dynamodb-table" {
+  count           = var.s3_remote_state_params.dynamodb_table_name == null ? 0 : 1
   name            = var.s3_remote_state_params.dynamodb_table_name
   billing_mode    = "PROVISIONED"
   read_capacity   = 1
