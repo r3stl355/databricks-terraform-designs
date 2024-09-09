@@ -79,6 +79,33 @@ class TestHydrator(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             is_ok, res = self.config._resolve(f'find_in_parent_folders("non-existing-file.tmp")')
 
+    def test_use_parsed_include(self):
+        config_str = """
+        locals {
+            from_include = include.backend.remote_state.backend
+        }
+
+        include "backend" {
+            path = "<backend_file_path_here>"
+        }"""
+
+        remote_state = """
+        remote_state {
+            backend = "s3"
+        }
+        """
+        fd, path = tempfile.mkstemp()
+        try:
+            with os.fdopen(fd, 'w') as tmp:
+                tmp.write(remote_state)
+
+            config = TerragruntConfigParser(Path('./no-file.hcl'), config_str.replace('<backend_file_path_here>', path), required_blocks=[])
+        finally:
+            os.remove(path)
+
+        self.assertEqual(config.get_block(Block.INCLUDE)['backend']['remote_state']['backend'], 's3')
+        self.assertEqual(config.get_block(Block.LOCALS)['from_include'], 's3')
+
     def test_parse(self):
         config_str = """
         terraform {

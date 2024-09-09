@@ -159,7 +159,6 @@ class Hydrator:
     
     def parse_config(self):   
         self.config_parser = TerragruntConfigParser(CONFIG_FILE)
-        log(f'Parsed config: {self.config_parser}')
         return self
 
 class TerragruntConfigParser:
@@ -202,9 +201,9 @@ class TerragruntConfigParser:
         flags = re.IGNORECASE | re.MULTILINE | re.DOTALL
 
         # One way to parse HCL is by converting it to JSON
-        config = re.subn('\s*#[^\n]*', '', self.config_str)                          # remove comments
+        config = re.subn('\s*#[^\n]*', '', self.config_str)                     # remove comments
         config = re.subn('\${', SUB_REPLACE, config[0], flags)                  # temporarily mask interpolation (start of)
-        config = re.subn('(^|\n)include\s+"([^\s"]+)"\s*{', INC_PREFIX + '\\2 {', config[0], flags)     # parse imports: `import "name" {` with `import_name {`
+        config = re.subn('(^|\n)\s*include\s+"([^\s"]+)"\s*{', '\\1' + INC_PREFIX + '\\2 {', config[0], flags)     # parse imports: `import "name" {` with `import_name {`
         config = re.subn('"', QUOTE_REPLACE, config[0], flags)                  # temporarily mask double quotes
         config = re.subn('([^\s\n=\$]+)\s*=', ',"\\1":', config[0], flags)      # replace `name =` with `,"name":`
         config = re.subn('([^\s\n:{]+)\s*{', ',"\\1": {', config[0], flags)     # replace `name {` with `,"name": {`
@@ -215,6 +214,8 @@ class TerragruntConfigParser:
         config = re.subn('"\^\^', '"', config[0], flags)                        # remove extra double quotes introduced earlier (from the string start)
         config = re.subn('\^\^"', '"', config[0], flags)                        # remove extra double quotes from string ends
         conf_str = config[0].replace(': "true"', ': true').replace(': "false"', ': false')  # unwrap booleans
+
+        log(f'Config str: {conf_str}')
         config = json.loads(f"{{{conf_str}}}")
         log(f'Config: {config}')
 
@@ -254,6 +255,7 @@ class TerragruntConfigParser:
                 self.config[block_key] = res if res is not None else {}
             log(f'{block_key}: {res}')
 
+        log(f'Parsed config: {self.config}')
         return self
 
     def _parse_include(self, config: dict) -> dict:
@@ -368,7 +370,7 @@ class TerragruntConfigParser:
     def _get_include(self, key: str):
         if key.startswith('include.'):
             key = key[len('include.'):]
-        lookup = self.config[Block.INCLUDE]
+        lookup = self.config[self._block_key(Block.INCLUDE)]
         for k in key.split('.'):
             res = lookup.get(k, None)
             if res is None:
@@ -573,9 +575,12 @@ class TerragruntConfigParser:
         
         return find_recursive(Path('../').resolve())
 
-    def _path_relative_to_include(self):
+    def _path_relative_to_include(self) -> str:
         caller = self._get_terragrunt_dir()
-        return caller.relative_to(self.config_file_path.parent.absolute().resolve())
+        res = caller.relative_to(self.config_file_path.parent.absolute().resolve())
+
+        # Need to use posix style separator here
+        return str(res).replace(os.sep, '/')
 
     def _merge(self, dest: dict, src: dict) -> dict:
         # Do not update the destination dict directly, may end up re-writing state

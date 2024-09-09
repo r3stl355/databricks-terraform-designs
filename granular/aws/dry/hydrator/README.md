@@ -68,3 +68,7 @@ python ../../../hydrator/hydrator.py destroy
 ```
 python -m unittest test_hydrator.py
 ```
+
+## Troubleshooting
+
+- If getting `Error: Backend initialization required: please run "terraform init"` or similar errors suggesting to run `terraform init` then delete the `_hydrator/.terraform` directory and try again
