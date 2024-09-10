@@ -172,9 +172,8 @@ class TerragruntConfigParser:
         self.config_str = config_str
         self.required_blocks = required_blocks
         self.config = {}
+        self.config[self._block_key(Block.LOCALS)] = {}
 
-        # TODO: refactor - remove this object level property
-        self.locals = {}
         self.known_functions = {
             'get_env': self._get_env, 
             'file': self._file, 
@@ -198,12 +197,17 @@ class TerragruntConfigParser:
     
     def _parse_config(self):
 
+        config_str = self.config_str.strip()
+        if len(config_str) == 0:
+            return self
+        
         flags = re.IGNORECASE | re.MULTILINE | re.DOTALL
 
         # One way to parse HCL is by converting it to JSON
-        config = re.subn('\s*#[^\n]*', '', self.config_str)                     # remove comments
+        config = re.subn('\s*#[^\n]*', '', config_str)                          # remove comments
         config = re.subn('\${', SUB_REPLACE, config[0], flags)                  # temporarily mask interpolation (start of)
-        config = re.subn('(^|\n)\s*include\s+"([^\s"]+)"\s*{', '\\1' + INC_PREFIX + '\\2 {', config[0], flags)     # parse imports: `import "name" {` with `import_name {`
+        inc = '(^|\n)\s*include\s+"([^\s"]+)"\s*{'
+        config = re.subn(inc, '\\1' + INC_PREFIX + '\\2 {', config[0], flags)   # parse imports: `import "name" {` with `import_name {`
         config = re.subn('"', QUOTE_REPLACE, config[0], flags)                  # temporarily mask double quotes
         config = re.subn('([^\s\n=\$]+)\s*=', ',"\\1":', config[0], flags)      # replace `name =` with `,"name":`
         config = re.subn('([^\s\n:{]+)\s*{', ',"\\1": {', config[0], flags)     # replace `name {` with `,"name": {`
@@ -230,7 +234,7 @@ class TerragruntConfigParser:
             self.config[block_key] = tf
         log(f'{block_key}: {tf}')
 
-        # Resolve includes first (which seem to allow only fixed values, no functions or vars)
+        # Resolve includes first (which in Terragrunt seem to allow only fixed values or functions, no locals)
         block = Block.INCLUDE
         block_key = self._block_key(block)
         includes = {}
@@ -292,7 +296,7 @@ class TerragruntConfigParser:
                     resolved[key] = res
                     if block_type == Block.LOCALS and not is_recursive:
                         # Store only top level locals
-                        self.locals[key] = res
+                        self.config[self._block_key(Block.LOCALS)][key] = res
                 elif not is_recursive:
                     # Dependency not found, this could only happen to locals, not inputs, put it back to queue but only if it wasn't the last one
                     if len(to_process) > 0:
@@ -358,7 +362,7 @@ class TerragruntConfigParser:
     def _get_local(self, key: str):
         if key.startswith('local.'):
             key = key[len('local.'):]
-        lookup = self.locals
+        lookup = self.config[self._block_key(Block.LOCALS)]
         for k in key.split('.'):
             res = lookup.get(k, None)
             if res is None:

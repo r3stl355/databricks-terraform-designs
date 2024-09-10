@@ -11,6 +11,16 @@ class TestHydrator(unittest.TestCase):
     def setUp(self):
         self.config = TerragruntConfigParser(Path('./no-file.hcl'), config_str='', required_blocks=[])
 
+    def _config_with_basic_locals(self) -> str:
+        return """
+        locals {
+            sub_object = {
+                str_val = "my-string"
+                bool_val = true
+                num_val = 12
+            }
+        }"""
+
     def test_get_env(self):
         key = 'hydrator_test_get_env_key'
         val = 'test_my_env'
@@ -25,9 +35,16 @@ class TestHydrator(unittest.TestCase):
         self.assertTrue(is_ok)
         self.assertEqual(res,expected)
 
+    def test_parse_config_locals(self):
+        config = TerragruntConfigParser(Path('./no-file.hcl'), config_str= self._config_with_basic_locals(), required_blocks=[])
+        sub_object = config.get_block(Block.LOCALS).get('sub_object', None)
+        self.assertIsNotNone(sub_object)
+        self.assertEqual(sub_object['str_val'], 'my-string')
+        self.assertTrue(sub_object['bool_val'])
+
     def test_jsondecode(self):
         json = '{"sub_object": {"str_val": "my-string", "bool_val": true, "num_val": 12}}'
-        self.config.locals['json'] = json
+        self.config.get_block(Block.LOCALS)['json'] = json
         is_ok, res = self.config._resolve(f'jsondecode(local.json)')
         self.assertTrue(is_ok)
 
@@ -37,7 +54,6 @@ class TestHydrator(unittest.TestCase):
         try:
             with os.fdopen(fd, 'w') as tmp:
                 tmp.write(val)
-
             is_ok, res = self.config._resolve(f'file("{path}")')  
         finally:
             os.remove(path) 
