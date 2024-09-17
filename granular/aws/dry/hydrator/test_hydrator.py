@@ -36,11 +36,29 @@ class TestHydrator(unittest.TestCase):
         self.assertEqual(res,expected)
 
     def test_parse_config_locals(self):
-        config = TerragruntConfigParser(Path('./no-file.hcl'), config_str= self._config_with_basic_locals(), required_blocks=[])
+        config = TerragruntConfigParser(Path('./no-file.hcl'), config_str=self._config_with_basic_locals(), required_blocks=[])
         sub_object = config.get_block(Block.LOCALS).get('sub_object', None)
         self.assertIsNotNone(sub_object)
         self.assertEqual(sub_object['str_val'], 'my-string')
         self.assertTrue(sub_object['bool_val'])
+
+    def test_parse_config_null_local(self):
+        config_str = """
+        inputs = {
+            should_be_null = local.not_there
+        }"""
+        config = TerragruntConfigParser(Path('./no-file.hcl'), config_str=config_str, required_blocks=[])
+        inputs = config.get_block(Block.INPUTS)
+        self.assertTrue('should_be_null' in inputs)
+        self.assertIsNone(inputs['should_be_null'])
+
+    def test_parse_config_null_loca_errors_in_string(self):
+        config_str = """
+        inputs = {
+            should_be_null = "${local.not_there}"
+        }"""
+        with self.assertRaises(LookupError):
+            TerragruntConfigParser(Path('./no-file.hcl'), config_str=config_str, required_blocks=[])
 
     def test_jsondecode(self):
         json = '{"sub_object": {"str_val": "my-string", "bool_val": true, "num_val": 12}}'
@@ -100,7 +118,6 @@ class TestHydrator(unittest.TestCase):
         locals {
             from_include = include.backend.remote_state.backend
         }
-
         include "backend" {
             path = "<backend_file_path_here>"
         }"""
@@ -115,6 +132,8 @@ class TestHydrator(unittest.TestCase):
             with os.fdopen(fd, 'w') as tmp:
                 tmp.write(remote_state)
 
+            # Use posix path separator, both for Windows and Linux
+            path = path.replace(os.sep, '/')
             config = TerragruntConfigParser(Path('./no-file.hcl'), config_str.replace('<backend_file_path_here>', path), required_blocks=[])
         finally:
             os.remove(path)

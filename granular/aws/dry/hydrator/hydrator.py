@@ -255,8 +255,8 @@ class TerragruntConfigParser:
             _, res = self._resolve(config.get(block_key, None), block_type=block, is_recursive=False)
 
             # These are top level blocks, do not store null for them
-            if res:
-                self.config[block_key] = res if res is not None else {}
+            if res is not None:
+                self.config[block_key] = res  # if res is not None else {}
             log(f'{block_key}: {res}')
 
         log(f'Parsed config: {self.config}')
@@ -335,7 +335,8 @@ class TerragruntConfigParser:
                 if v is not None:
                     return True, v
                 elif local_must_exist:
-                    raise LookupError(f"'{value}' not found in locals")
+                    # Null is fine here
+                    return True, None
                 else:
                     return False, None
             
@@ -405,6 +406,7 @@ class TerragruntConfigParser:
                     value_str = value_str.replace(full_local, str(v), 1)
                     continue
                 elif local_must_exist:
+                    # Do not allow nulls in string interpolation
                     raise LookupError(f"'{key}' not found in locals")
                 return False, None
             break
