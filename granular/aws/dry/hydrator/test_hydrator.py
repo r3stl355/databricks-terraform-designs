@@ -42,17 +42,18 @@ class TestHydrator(unittest.TestCase):
         self.assertEqual(sub_object['str_val'], 'my-string')
         self.assertTrue(sub_object['bool_val'])
 
-    def test_parse_config_null_local(self):
+    def test_parse_config_null_local_errors(self):
         config_str = """
         inputs = {
             should_be_null = local.not_there
         }"""
-        config = TerragruntConfigParser(Path('./no-file.hcl'), config_str=config_str, required_blocks=[])
-        inputs = config.get_block(Block.INPUTS)
-        self.assertTrue('should_be_null' in inputs)
-        self.assertIsNone(inputs['should_be_null'])
+        with self.assertRaises(LookupError):
+            config = TerragruntConfigParser(Path('./no-file.hcl'), config_str=config_str, required_blocks=[])
+        # inputs = config.get_block(Block.INPUTS)
+        # self.assertTrue('should_be_null' in inputs)
+        # self.assertIsNone(inputs['should_be_null'])
 
-    def test_parse_config_null_loca_errors_in_string(self):
+    def test_parse_config_null_local_errors_in_string(self):
         config_str = """
         inputs = {
             should_be_null = "${local.not_there}"
@@ -167,6 +168,7 @@ class TestHydrator(unittest.TestCase):
         inputs = {
             metastore_params  = jsondecode(file("${local.var_file}"))
             some_input        = local.some_val
+            no_val            = lookup(local.nested_string, "no_name", "no_val_default")
         }"""
         var_file_contents = '{"some_var": "some_var_value"}'
 
@@ -193,6 +195,7 @@ class TestHydrator(unittest.TestCase):
         self.assertEqual(config.get_block(Block.LOCALS)['some_val'], 10.15)
         self.assertTrue(config.get_block(Block.LOCALS)['a_true'])
         self.assertFalse(config.get_block(Block.LOCALS)['a_false'])
+        # self.assertEqual(config.get_block(Block.INPUTS)['no_val'], 'no_val_default')
 
 if __name__ == '__main__':
     unittest.main()

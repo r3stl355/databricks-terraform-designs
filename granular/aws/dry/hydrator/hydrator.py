@@ -57,7 +57,7 @@ SUB_REPLACE = '%|||||'
 QUOTE_REPLACE = '`````'
 INC_PREFIX = 'include_'
 TF_RUN_FORMAT = 'cd _hydrator && terraform {}'
-LOG_LEVEL = logging.INFO
+LOG_LEVEL = logging.DEBUG
 
 def log(msg: str, level=logging.DEBUG):
     if LOG_LEVEL <= level:
@@ -181,7 +181,8 @@ class TerragruntConfigParser:
             'get_terragrunt_dir': self._get_terragrunt_dir,
             'jsondecode': self._jsondecode,
             'path_relative_to_include': self._path_relative_to_include,
-            'merge': self._merge
+            'merge': self._merge,
+            'lookup': self._lookup
         }
 
         self._parse_config()
@@ -204,19 +205,19 @@ class TerragruntConfigParser:
         flags = re.IGNORECASE | re.MULTILINE | re.DOTALL
 
         # One way to parse HCL is by converting it to JSON
-        config = re.subn('\s*#[^\n]*', '', config_str)                          # remove comments
-        config = re.subn('\${', SUB_REPLACE, config[0], flags)                  # temporarily mask interpolation (start of)
+        config = re.subn('\s*#[^\n]*', '', config_str)                                  # remove comments
+        config = re.subn('\${', SUB_REPLACE, config[0], flags=flags)                    # temporarily mask interpolation (start of)
         inc = '(^|\n)\s*include\s+"([^\s"]+)"\s*{'
-        config = re.subn(inc, '\\1' + INC_PREFIX + '\\2 {', config[0], flags)   # parse imports: `import "name" {` with `import_name {`
-        config = re.subn('"', QUOTE_REPLACE, config[0], flags)                  # temporarily mask double quotes
-        config = re.subn('([^\s\n=\$]+)\s*=', ',"\\1":', config[0], flags)      # replace `name =` with `,"name":`
-        config = re.subn('([^\s\n:{]+)\s*{', ',"\\1": {', config[0], flags)     # replace `name {` with `,"name": {`
-        config = re.subn(':\s*([^\s\d"{][^\n$]*)', ': "\\1"', config[0], flags) # wrap simple non-numeric values into double quotes
-        config = re.subn('\s*\n\s*', '', config[0], flags)                      # remove empty space
-        config = re.subn('{,', '{', config[0], flags)                           # remove extra commas after `{` (introduced by previous substitutions)
-        config = re.subn('^,', '', config[0], flags)                            # remove extra commas at the start of line
-        config = re.subn('"\^\^', '"', config[0], flags)                        # remove extra double quotes introduced earlier (from the string start)
-        config = re.subn('\^\^"', '"', config[0], flags)                        # remove extra double quotes from string ends
+        config = re.subn(inc, '\\1' + INC_PREFIX + '\\2 {', config[0], flags=flags)     # parse imports: `import "name" {` with `import_name {`
+        config = re.subn('"', QUOTE_REPLACE, config[0], flags=flags)                    # temporarily mask double quotes
+        config = re.subn('([^\s\n=\$]+)\s*=', ',"\\1":', config[0], flags=flags)        # replace `name =` with `,"name":`
+        config = re.subn('([^\s\n:{]+)\s*{', ',"\\1": {', config[0], flags=flags)       # replace `name {` with `,"name": {`
+        config = re.subn(':\s*([^\s\d"{][^\n$]*)', ': "\\1"', config[0], flags=flags)   # wrap simple non-numeric values into double quotes
+        config = re.subn('\s*\n\s*', '', config[0], flags=flags)                        # remove empty space
+        config = re.subn('{,', '{', config[0], flags=flags)                             # remove extra commas after `{` (introduced by previous substitutions)
+        config = re.subn('^,', '', config[0], flags=flags)                              # remove extra commas at the start of line
+        config = re.subn('"\^\^', '"', config[0], flags=flags)                          # remove extra double quotes introduced earlier (from the string start)
+        config = re.subn('\^\^"', '"', config[0], flags=flags)                          # remove extra double quotes from string ends
         conf_str = config[0].replace(': "true"', ': true').replace(': "false"', ': false')  # unwrap booleans
 
         log(f'Config str: {conf_str}')
@@ -335,8 +336,7 @@ class TerragruntConfigParser:
                 if v is not None:
                     return True, v
                 elif local_must_exist:
-                    # Null is fine here
-                    return True, None
+                    raise LookupError(f"'{value}' not found in locals")
                 else:
                     return False, None
             
@@ -406,7 +406,6 @@ class TerragruntConfigParser:
                     value_str = value_str.replace(full_local, str(v), 1)
                     continue
                 elif local_must_exist:
-                    # Do not allow nulls in string interpolation
                     raise LookupError(f"'{key}' not found in locals")
                 return False, None
             break
@@ -593,6 +592,9 @@ class TerragruntConfigParser:
         res = dest.copy()
         res.update(src)
         return res
+    
+    def _lookup(self, src: dict, attr, default):
+        return src.get(attr, default)
 
 def get_args():
     parser = ArgumentParser(
