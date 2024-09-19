@@ -340,16 +340,22 @@ class TerragruntConfigParser:
                 else:
                     return False, None
             
-            if value.startswith('include.'):
+            elif value.startswith('include.'):
+                log(f'Resolving include: {value}')
                 v = self._get_include(value)
                 return v is not None, v
                 
-            if value.startswith('"') and value.endswith('"'):
+            elif value.startswith('"') and value.endswith('"'):
                 # This is a true string, strip the quotes
+                log(f'Resolving string: {value}')
                 is_ok, res = self._replace_locals(value.strip('"'), local_must_exist=local_must_exist)
                 if is_ok:
                     res = self._replace_functions(res)
                 return is_ok, res
+            
+            elif value.startswith('null'):
+                log(f'Resolving null/None')
+                return True, None
             
             elif self._is_function(value):
                 return self._exec_function(value)
@@ -539,6 +545,12 @@ class TerragruntConfigParser:
                 while j < len(param_str) and param_str[j] != ',':
                     j += 1
                 params.append(param_str[i:j].strip())
+                i = j + 1
+            elif param_str[i:].startswith('null'):
+                j = i + len('null')
+                params.append('null')
+                while j < len(param_str) and param_str[j] != ',':
+                    j += 1
                 i = j + 1
             else:
                 raise RuntimeError(f"Should never get here: {param_str}")

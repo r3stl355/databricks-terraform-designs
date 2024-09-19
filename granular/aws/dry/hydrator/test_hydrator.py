@@ -142,7 +142,7 @@ class TestHydrator(unittest.TestCase):
         self.assertEqual(config.get_block(Block.INCLUDE)['backend']['remote_state']['backend'], 's3')
         self.assertEqual(config.get_block(Block.LOCALS)['from_include'], 's3')
 
-    def test_parse(self):
+    def test_large_parse(self):
         config_str = """
         terraform {
             source = "../hydrator"
@@ -163,12 +163,14 @@ class TestHydrator(unittest.TestCase):
             some_file           = "${local.var_file}"
             a_true              = true
             a_false             = false
+            null_local          = null
         }
 
         inputs = {
             metastore_params  = jsondecode(file("${local.var_file}"))
             some_input        = local.some_val
             no_val            = lookup(local.nested_string, "no_name", "no_val_default")
+            null_val          = lookup(local.nested_string, "no_name", null)
         }"""
         var_file_contents = '{"some_var": "some_var_value"}'
 
@@ -195,7 +197,9 @@ class TestHydrator(unittest.TestCase):
         self.assertEqual(config.get_block(Block.LOCALS)['some_val'], 10.15)
         self.assertTrue(config.get_block(Block.LOCALS)['a_true'])
         self.assertFalse(config.get_block(Block.LOCALS)['a_false'])
-        # self.assertEqual(config.get_block(Block.INPUTS)['no_val'], 'no_val_default')
+        self.assertEqual(config.get_block(Block.INPUTS)['no_val'], 'no_val_default')
+        self.assertIsNone(config.get_block(Block.INPUTS)['null_val'])
+        self.assertIsNone(config.get_block(Block.LOCALS)['null_local'])
 
 if __name__ == '__main__':
     unittest.main()
