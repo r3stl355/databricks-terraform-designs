@@ -57,7 +57,7 @@ SUB_REPLACE = '%|||||'
 QUOTE_REPLACE = '`````'
 INC_PREFIX = 'include_'
 TF_RUN_FORMAT = 'cd _hydrator && terraform {}'
-LOG_LEVEL = logging.DEBUG
+LOG_LEVEL = logging.INFO
 
 def log(msg: str, level=logging.DEBUG):
     if LOG_LEVEL <= level:
@@ -211,7 +211,7 @@ class TerragruntConfigParser:
         config = re.subn(inc, '\\1' + INC_PREFIX + '\\2 {', config[0], flags=flags)     # parse imports: `import "name" {` with `import_name {`
         config = re.subn('"', QUOTE_REPLACE, config[0], flags=flags)                    # temporarily mask double quotes
         config = re.subn('([^\s\n=\$]+)\s*=', ',"\\1":', config[0], flags=flags)        # replace `name =` with `,"name":`
-        config = re.subn('([^\s\n:{]+)\s*{', ',"\\1": {', config[0], flags=flags)       # replace `name {` with `,"name": {`
+        config = re.subn('([^\s\n:{,]+)\s*{', ',"\\1": {', config[0], flags=flags)       # replace `name {` with `,"name": {`
         config = re.subn(':\s*([^\s\d"{][^\n$]*)', ': "\\1"', config[0], flags=flags)   # wrap simple non-numeric values into double quotes
         config = re.subn('\s*\n\s*', '', config[0], flags=flags)                        # remove empty space
         config = re.subn('{,', '{', config[0], flags=flags)                             # remove extra commas after `{` (introduced by previous substitutions)
@@ -356,6 +356,10 @@ class TerragruntConfigParser:
             elif value.startswith('null'):
                 log(f'Resolving null/None')
                 return True, None
+            
+            elif value.startswith('{}'):
+                log(f'Resolving emty object')
+                return True, {}
             
             elif self._is_function(value):
                 return self._exec_function(value)
@@ -549,6 +553,12 @@ class TerragruntConfigParser:
             elif param_str[i:].startswith('null'):
                 j = i + len('null')
                 params.append('null')
+                while j < len(param_str) and param_str[j] != ',':
+                    j += 1
+                i = j + 1
+            elif param_str[i:].startswith('{}'):
+                j = i + len('{}}')
+                params.append('{}')
                 while j < len(param_str) and param_str[j] != ',':
                     j += 1
                 i = j + 1

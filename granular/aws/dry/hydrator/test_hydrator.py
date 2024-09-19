@@ -164,6 +164,7 @@ class TestHydrator(unittest.TestCase):
             a_true              = true
             a_false             = false
             null_local          = null
+            empty_object        = {}
         }
 
         inputs = {
@@ -171,6 +172,7 @@ class TestHydrator(unittest.TestCase):
             some_input        = local.some_val
             no_val            = lookup(local.nested_string, "no_name", "no_val_default")
             null_val          = lookup(local.nested_string, "no_name", null)
+            empty_object      = lookup(local.nested_string, "no_name", {})
         }"""
         var_file_contents = '{"some_var": "some_var_value"}'
 
@@ -200,6 +202,8 @@ class TestHydrator(unittest.TestCase):
         self.assertEqual(config.get_block(Block.INPUTS)['no_val'], 'no_val_default')
         self.assertIsNone(config.get_block(Block.INPUTS)['null_val'])
         self.assertIsNone(config.get_block(Block.LOCALS)['null_local'])
+        self.assertEqual(config.get_block(Block.LOCALS)['empty_object'], {})
+        self.assertEqual(config.get_block(Block.INPUTS)['empty_object'], {})
 
 if __name__ == '__main__':
     unittest.main()
