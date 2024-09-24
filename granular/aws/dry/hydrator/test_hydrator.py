@@ -42,6 +42,12 @@ class TestHydrator(unittest.TestCase):
         self.assertEqual(sub_object['str_val'], 'my-string')
         self.assertTrue(sub_object['bool_val'])
 
+    def test_parse_replace(self):
+        config_str = self._config_with_basic_locals().replace('my-string', 'my-${replace("some-original-value", "original", "replaced")}-string')
+        config = TerragruntConfigParser(Path('./no-file.hcl'), config_str=config_str, required_blocks=[])
+        new_val = config.get_block(Block.LOCALS)['sub_object']['str_val']
+        self.assertEqual(new_val, 'my-some-replaced-value-string')
+
     def test_parse_config_null_local_errors(self):
         config_str = """
         inputs = {
@@ -49,9 +55,6 @@ class TestHydrator(unittest.TestCase):
         }"""
         with self.assertRaises(LookupError):
             config = TerragruntConfigParser(Path('./no-file.hcl'), config_str=config_str, required_blocks=[])
-        # inputs = config.get_block(Block.INPUTS)
-        # self.assertTrue('should_be_null' in inputs)
-        # self.assertIsNone(inputs['should_be_null'])
 
     def test_parse_config_null_local_errors_in_string(self):
         config_str = """
@@ -204,6 +207,7 @@ class TestHydrator(unittest.TestCase):
         self.assertIsNone(config.get_block(Block.LOCALS)['null_local'])
         self.assertEqual(config.get_block(Block.LOCALS)['empty_object'], {})
         self.assertEqual(config.get_block(Block.INPUTS)['empty_object'], {})
+        
 
 if __name__ == '__main__':
     unittest.main()

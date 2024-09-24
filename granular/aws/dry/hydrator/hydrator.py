@@ -70,10 +70,18 @@ class Hydrator:
         self.config_parser = None
 
     def run(self):
-        if self.operation == Operation.DESTROY:
-            self._tf_run(self.operation)
-        else:
-            self.parse_config()._copy()._set_vars()._init(self.operation == Operation.INIT)._tf_run(self.operation)
+        # If running only against a single state then it would be possible to avoid running all the steps when Destroying, but
+        # that won't work if the same configuration is used to to deploy to different states (e.g. dev and test in the same target
+        # environment but everything is the same, controlled by some prefix. Therefore all the operations will go throu the same steps
+        res = self.parse_config()._copy()._set_vars()._init(self.operation == Operation.INIT)._tf_run(self.operation)
+        if res > 0:
+            # Signal failure to the caller, stopping here
+            quit()
+
+        # Backup the local state on success if existing state files are allowed
+        state_file = RUN_DIR / 'terrform.tfstate'
+        if self.operation == Operation.APPLY and self.allow_state and state_file.exists():
+            shutil.copy(state_file, Path('./'))
 
     def _init(self, no_op=False):
         tf = RUN_DIR / '.terraform'
@@ -82,11 +90,7 @@ class Hydrator:
         return self
 
     def _tf_run(self, op: Operation):
-        res = os.system(TF_RUN_FORMAT.format(op.name.lower()))
-
-        # Signal failure to the caller
-        if res > 0:
-            quit()
+        return os.system(TF_RUN_FORMAT.format(op.name.lower()))
 
     def _set_vars(self):
         inputs = self.config_parser.get_block(Block.INPUTS)
@@ -189,7 +193,8 @@ class TerragruntConfigParser:
             'jsondecode': self._jsondecode,
             'path_relative_to_include': self._path_relative_to_include,
             'merge': self._merge,
-            'lookup': self._lookup
+            'lookup': self._lookup,
+            'replace': self._replace
         }
 
         self._parse_config()
@@ -624,6 +629,9 @@ class TerragruntConfigParser:
     
     def _lookup(self, src: dict, attr, default):
         return src.get(attr, default)
+    
+    def _replace(self, value: str, old: str, new: str):
+        return value.replace(old, new)
 
 def get_args():
     parser = ArgumentParser(
