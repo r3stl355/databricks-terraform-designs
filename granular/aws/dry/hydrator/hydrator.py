@@ -64,8 +64,9 @@ def log(msg: str, level=logging.DEBUG):
         print(f'[{dt.now().strftime("%Y-%m-d %H:%M:%S")}]: {msg}')
 
 class Hydrator:
-    def __init__(self, operation: str):
+    def __init__(self, operation: str, allow_state=False):
         self.operation = Operation(operation)
+        self.allow_state = allow_state
         self.config_parser = None
 
     def run(self):
@@ -81,7 +82,11 @@ class Hydrator:
         return self
 
     def _tf_run(self, op: Operation):
-        os.system(TF_RUN_FORMAT.format(op.name.lower()))
+        res = os.system(TF_RUN_FORMAT.format(op.name.lower()))
+
+        # Signal failure to the caller
+        if res > 0:
+            quit()
 
     def _set_vars(self):
         inputs = self.config_parser.get_block(Block.INPUTS)
@@ -97,24 +102,26 @@ class Hydrator:
 
         self.files = []
 
-        # `terraform` block must have a `source` attribute
+        # `terraform` block must have a `source` attribute. Copy files from there
         tf_source = Path(self.config_parser.get_block(Block.TERRAFORM)['source'])
         for f in tf_source.glob('*'):
             if f.is_file():
                 if f.suffix.lower() in ['.tfstate']:
+                    # State files in source modules are never allowed, they make no sense because they may/will be reused
                     raise FileExistsError(f"'{tf_source}' directory contains a state file, cannot apply a Terraform template with existing state")
                 elif f.suffix.lower() in ['.tf', '.tfvars', '.json']:
                     self.files.append(f)
         if len(self.files) == 0:
             raise RuntimeError(f'Teffaform files not found in {tf_source.absolute()}')
 
+        # Files local to config
         for f in Path('./').glob('*'):
             if f.is_file():
-                if f.suffix.lower() in ['.tfstate']:
-                    raise FileExistsError(f"Cannot run a template with an existing state file (found in the current directory)")
+                if f.suffix.lower() in ['.tfstate'] and not self.allow_state:
+                    raise FileExistsError(f"State files are not allowed in the current configuration, run with `--allow-state` to enable")
                 elif any([f.name == fe.name for fe in self.files]):
                     raise FileExistsError(f"File '{f.name}' exists in both local directory and target Terraform template directory")
-                elif f.suffix.lower() in ['.tf', '.tfvars', '.json']:
+                elif f.suffix.lower() in ['.tf', '.tfvars', '.json'] or f.name.lower() in ['.terraform.lock.hcl']:
                     self.files.append(f)
         [shutil.copy(f, RUN_DIR) for f in self.files]
         
