@@ -110,3 +110,5 @@ python ../../../hydrator/hydrator.py apply
 ## Disclaimer
 
 This project is provided for informational purposes only. It is not created or formally supported by Databricks. Code are provided AS-IS and we do not make any guarantees of any kind.
+
+- Parse lists

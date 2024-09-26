@@ -78,10 +78,16 @@ class Hydrator:
             # Signal failure to the caller, stopping here
             quit()
 
-        # Backup the local state on success if existing state files are allowed
-        state_file = RUN_DIR / 'terrform.tfstate'
-        if self.operation == Operation.APPLY and self.allow_state and state_file.exists():
-            shutil.copy(state_file, Path('./'))
+        if self.operation == Operation.APPLY:
+            # Backup the lock file if not exists locally
+            lock_file = Path('.terraform.lock.hcl')
+            if not lock_file.exists() and (RUN_DIR / lock_file).exists():
+                shutil.copy(RUN_DIR / lock_file, lock_file)
+
+            # Backup the local state if existing state files are allowed
+            state_file = RUN_DIR / 'terraform.tfstate'
+            if self.allow_state and state_file.exists():
+                shutil.copy(state_file, Path('./'), )
 
     def _init(self, no_op=False):
         tf = RUN_DIR / '.terraform'
@@ -125,7 +131,7 @@ class Hydrator:
                     raise FileExistsError(f"State files are not allowed in the current configuration, run with `--allow-state` to enable")
                 elif any([f.name == fe.name for fe in self.files]):
                     raise FileExistsError(f"File '{f.name}' exists in both local directory and target Terraform template directory")
-                elif f.suffix.lower() in ['.tf', '.tfvars', '.json'] or f.name.lower() in ['.terraform.lock.hcl']:
+                elif f.suffix.lower() in ['.tf', '.tfvars', '.json'] or f.name.lower() in ['.terraform.lock.hcl', 'terraform.tfstate']:
                     self.files.append(f)
         [shutil.copy(f, RUN_DIR) for f in self.files]
         
@@ -366,12 +372,16 @@ class TerragruntConfigParser:
                 return is_ok, res
             
             elif value.startswith('null'):
-                log(f'Resolving null/None')
+                log(f'Resolving null')
                 return True, None
             
             elif value.startswith('{}'):
-                log(f'Resolving emty object')
+                log(f'Resolving empty object')
                 return True, {}
+            
+            elif value.startswith('[]'):
+                log(f'Resolving empty list')
+                return True, []
             
             elif self._is_function(value):
                 return self._exec_function(value)
@@ -569,8 +579,14 @@ class TerragruntConfigParser:
                     j += 1
                 i = j + 1
             elif param_str[i:].startswith('{}'):
-                j = i + len('{}}')
+                j = i + len('{}')
                 params.append('{}')
+                while j < len(param_str) and param_str[j] != ',':
+                    j += 1
+                i = j + 1
+            elif param_str[i:].startswith('[]'):
+                j = i + len('[]')
+                params.append('[]')
                 while j < len(param_str) and param_str[j] != ',':
                     j += 1
                 i = j + 1
@@ -643,10 +659,17 @@ def get_args():
         help=f'Terraform operation to run, one of {[op.name.lower() for op in list(Operation)]}'
     )
 
+    parser.add_argument(
+        '-s',
+        '--allow-state',
+        action='store_true',
+        default=False,
+        help='If specified then the `.tfstate` file will be allowed in the config directory'
+    )
     return parser.parse_args()
 
 
 if __name__ == '__main__':
     args = get_args()
-    hydrator = Hydrator(args.operation)
+    hydrator = Hydrator(args.operation, args.allow_state)
     hydrator.run()
