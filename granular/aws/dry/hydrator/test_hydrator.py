@@ -33,7 +33,7 @@ class TestHydrator(unittest.TestCase):
         is_ok, res = self.config._resolve(f'"${{get_terragrunt_dir()}}"')
         expected = f'{Path(".").absolute().resolve()}'
         self.assertTrue(is_ok)
-        self.assertEqual(res,expected)
+        self.assertEqual(res, expected)
 
     def test_parse_config_locals(self):
         config = TerragruntConfigParser(Path('./no-file.hcl'), config_str=self._config_with_basic_locals(), required_blocks=[])
@@ -43,7 +43,7 @@ class TestHydrator(unittest.TestCase):
         self.assertTrue(sub_object['bool_val'])
 
     def test_parse_replace(self):
-        config_str = self._config_with_basic_locals().replace('my-string', 'my-${replace("some-original-value", "original", "replaced")}-string')
+        config_str = self._config_with_basic_locals().replace('my-string', "my-${replace(\"some-original-value\", \"original\", \"replaced\")}-string")
         config = TerragruntConfigParser(Path('./no-file.hcl'), config_str=config_str, required_blocks=[])
         new_val = config.get_block(Block.LOCALS)['sub_object']['str_val']
         self.assertEqual(new_val, 'my-some-replaced-value-string')
@@ -152,7 +152,27 @@ class TestHydrator(unittest.TestCase):
         }
 
         locals {
-            var_file            = get_env("TF_VAR_var_file", "${get_env("madeup", "variables.json")}")
+            var_file_prefix     = get_env("TF_VAR_var_file_prefix", "")
+
+            var_file            = "variables.json"
+            var_file            = "${local.var_file_prefix}variables.json"
+            var_file            = get_env("TF_VAR_var_file", "variables.json")
+            var_file            = get_env("TF_VAR_var_file", get_env("madeup", "variables.json"))
+
+            # This file is actually used by other parameters below
+            var_file            = get_env("TF_VAR_var_file", "${get_env("TF_VAR_var_file", "variables.json")}")
+
+            vars                = jsondecode(file("${local.var_file}"))
+            params              = local.vars.params
+
+            obj_str             = local.params.object_str
+            obj_from_var        = jsondecode(local.obj_str)
+            replaced            = replace(local.obj_from_var.key, "<placeholder>", "~replaced~")
+            replaced_obj        = jsondecode(replace(local.obj_str, "<placeholder>", "~replaced_in_object~"))
+
+            merged              = merge(local.params.object, local.replaced_obj)
+            merged_twice        = merge(local.params.object, merge(local.params.object, local.replaced_obj))
+
             not_ready           = "Before-${local.some_val}-b-${local.nested_string.value}-c"
             nested_string       = {
                 value = "Nested String Value"
@@ -164,20 +184,43 @@ class TestHydrator(unittest.TestCase):
             some_file_contents  = file(local.some_file)
             same_file_contents  = file("${local.some_file}")
             some_file           = "${local.var_file}"
+
+            missing_name        = lookup(local.vars.params, "name", "niko-never-found-name")
+
+            object_str          = "{\\"key\\": \\"val from string\\"}"
+            object_str_decoded  = jsondecode(local.object_str)
+            decode_from_str     = jsondecode("{\\"key\\": \\"string_json_value\\"}")
+            object_val          = {"key": "val from object"}
+
             a_true              = true
             a_false             = false
             null_local          = null
             empty_object        = {}
+            empty_list          = []
+
+            list_one            = ["list-one"]
+            list_one_val        = local.list_one[0]
+            list_three          = ["${local.list_one_val}", "list-two", "list-3"]
         }
 
         inputs = {
-            metastore_params  = jsondecode(file("${local.var_file}"))
-            some_input        = local.some_val
-            no_val            = lookup(local.nested_string, "no_name", "no_val_default")
-            null_val          = lookup(local.nested_string, "no_name", null)
-            empty_object      = lookup(local.nested_string, "no_name", {})
+            metastore_params    = local.params
+            some_input          = local.some_val
+            no_val              = lookup(local.nested_string, "no_name", "no_val_default")
+            null_val            = lookup(local.nested_string, "no_name", null)
+            empty_object        = lookup(local.nested_string, "no_name", {})
+            empty_list          = lookup(local.nested_string, "no_name", [])
         }"""
-        var_file_contents = '{"some_var": "some_var_value"}'
+        var_file_contents = '''{
+            "params": {
+                "some_var": "some_var_value", 
+                "object_str": "{\\"key\\": \\"json_<placeholder>_value\\"}",
+                "object": {
+                    "key": "default-key",
+                    "value": "default-value"
+                }
+            }
+        }'''
 
         fd_hcl, path_hcl = tempfile.mkstemp()
         fd_var, path_var = tempfile.mkstemp()

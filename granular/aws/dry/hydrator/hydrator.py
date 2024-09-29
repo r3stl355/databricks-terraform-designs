@@ -51,10 +51,11 @@ class Block(Enum):
     def val(self):
         return self.name.lower()
 
-CONFIG_FILE = Path('terragrunt.hcl')
+CONFIG_FILE_NAME = 'terragrunt.hcl'
 RUN_DIR = Path('_hydrator')
-SUB_REPLACE = '%|||||'
-QUOTE_REPLACE = '`````'
+SUB_REPLACE = '§|'
+QUOTE_REPLACE = '`'
+QUOTE_ESCAPE_REPLACE = "'"
 INC_PREFIX = 'include_'
 TF_RUN_FORMAT = 'cd _hydrator && terraform {}'
 LOG_LEVEL = logging.INFO
@@ -64,9 +65,10 @@ def log(msg: str, level=logging.DEBUG):
         print(f'[{dt.now().strftime("%Y-%m-d %H:%M:%S")}]: {msg}')
 
 class Hydrator:
-    def __init__(self, operation: str, allow_state=False):
+    def __init__(self, operation: str, allow_state=False, prefix=''):
         self.operation = Operation(operation)
         self.allow_state = allow_state
+        self.prefix = prefix
         self.config_parser = None
 
     def run(self):
@@ -174,8 +176,9 @@ class Hydrator:
 
         return self
     
-    def parse_config(self):   
-        self.config_parser = TerragruntConfigParser(CONFIG_FILE)
+    def parse_config(self): 
+        config_file = Path(self.prefix + CONFIG_FILE_NAME)  
+        self.config_parser = TerragruntConfigParser(config_file)
         return self
 
 class TerragruntConfigParser:
@@ -213,30 +216,57 @@ class TerragruntConfigParser:
 
     def _block_key(self, block: Block) -> str:
         return block.val()
-    
+
     def _parse_config(self):
 
         config_str = self.config_str.strip()
         if len(config_str) == 0:
             return self
         
-        flags = re.IGNORECASE | re.MULTILINE | re.DOTALL
+        
 
-        # One way to parse HCL is by converting it to JSON
-        config = re.subn('\s*#[^\n]*', '', config_str)                                  # remove comments
-        config = re.subn('\${', SUB_REPLACE, config[0], flags=flags)                    # temporarily mask interpolation (start of)
-        inc = '(^|\n)\s*include\s+"([^\s"]+)"\s*{'
-        config = re.subn(inc, '\\1' + INC_PREFIX + '\\2 {', config[0], flags=flags)     # parse imports: `import "name" {` with `import_name {`
-        config = re.subn('"', QUOTE_REPLACE, config[0], flags=flags)                    # temporarily mask double quotes
-        config = re.subn('([^\s\n=\$]+)\s*=', ',"\\1":', config[0], flags=flags)        # replace `name =` with `,"name":`
-        config = re.subn('([^\s\n:{,]+)\s*{', ',"\\1": {', config[0], flags=flags)       # replace `name {` with `,"name": {`
-        config = re.subn(':\s*([^\s\d"{][^\n$]*)', ': "\\1"', config[0], flags=flags)   # wrap simple non-numeric values into double quotes
-        config = re.subn('\s*\n\s*', '', config[0], flags=flags)                        # remove empty space
-        config = re.subn('{,', '{', config[0], flags=flags)                             # remove extra commas after `{` (introduced by previous substitutions)
-        config = re.subn('^,', '', config[0], flags=flags)                              # remove extra commas at the start of line
-        config = re.subn('"\^\^', '"', config[0], flags=flags)                          # remove extra double quotes introduced earlier (from the string start)
-        config = re.subn('\^\^"', '"', config[0], flags=flags)                          # remove extra double quotes from string ends
-        conf_str = config[0].replace(': "true"', ': true').replace(': "false"', ': false')  # unwrap booleans
+        # One way to parse HCL is by converting it to JSON. Could also be done using existing 3rd party libraries but this is 
+        # designed to work in constrained environments where only Python is avaiable with no additional libraries
+
+        ops = [
+            ('\s*#[^\n]*', ''),                                 # Remove comments
+            ('\\\\"', QUOTE_ESCAPE_REPLACE),                    # Temporarily mask escaped strings
+            ('\${', SUB_REPLACE),                               # TODO: is it really necessary? Temporarily mask interpolation (start of)
+            (
+                '(^|\n)\s*include\s+"([^\s"]+)"\s*{', 
+                '\\1' + INC_PREFIX + '\\2 {'
+            ),                                                  # Parse imports: `import "name" {` with `import_name {`, do this before double quote masking!
+            ('"', QUOTE_REPLACE),                               # Temporarily mask double quotes. This is necesary to handle cases when
+            ('(\n|^)\s*([^\s\n=\$]+)\s*=', '\\1,"\\2":'),       # Replace `name =` with `,"name":`
+            ('(\n|^)\s*([^\s\n:{,"]+)\s*{', '\\1,"\\2": {'),    # Replace `name {` with `,"name": {`, this should only apply to top level parameters
+
+            (':\s*(`[^`]*`)\s*((}|,))', ': "\\1"\\2'),          # Wrap the object string value into double quotes 
+                      
+            (':\s*([^\s\d[{"\'][^\n$]*)', ': "\\1"'),           # Wrap simple non-numeric values into double quotes
+            ('\s*\n\s*', ' '),                                  # Compress empty space into a single space
+            ('{(\s|\n)*,', '{'),                                # Remove extra commas after `{` which could've been introduced by the previous substitutions
+            ('{\s*`', '{"`'), ('`\s*:', '`":'),                 # Wrap the object keys into double quotes
+            (':\s*\[`', ': ["`'), 
+            ('(:\s\["`[^]]*`)]', '\\1"]'),                      # Handle list edges
+            (QUOTE_ESCAPE_REPLACE, '\\\\"'),                    # Restore masked escaped double quotes
+        ]
+
+        flags = re.IGNORECASE | re.MULTILINE | re.DOTALL      
+        for p, r in ops:
+            config_str = re.subn(p, r, config_str, flags=flags)[0]
+        
+        # Handle multi-element list inner parts
+        while True:
+            config = re.subn(':\s*\[([^]]*)`\s*,\s*`([^]]+)]', ': [\\1`", "`\\2]', config_str, flags=flags)
+            if config[1] == 0:
+                break
+            config_str = config[0]
+
+        # Remove extra commas at the boundaries                            
+        config_str = config_str.strip(',')
+
+        # Unwrap booleans and nulls which may've got wrapped into double quotes earlier
+        conf_str = config_str.replace(': "true"', ': true').replace(': "false"', ': false').replace(': "null"', ': null')   
 
         log(f'Config str: {conf_str}')
         config = json.loads(f"{{{conf_str}}}")
@@ -312,10 +342,12 @@ class TerragruntConfigParser:
                 key = to_process.pop(0)
                 is_ok, res = self._resolve(value[key], block_type=block_type, is_recursive=True)
                 if is_ok:
-                    resolved[key] = res
+                    # Key may be wrapped into QUOTE_REPLACE
+                    k = key.strip(QUOTE_REPLACE)
+                    resolved[k] = res
                     if block_type == Block.LOCALS and not is_recursive:
                         # Store only top level locals
-                        self.config[self._block_key(Block.LOCALS)][key] = res
+                        self.config[self._block_key(Block.LOCALS)][k] = res
                 elif not is_recursive:
                     # Dependency not found, this could only happen to locals, not inputs, put it back to queue but only if it wasn't the last one
                     if len(to_process) > 0:
@@ -342,8 +374,9 @@ class TerragruntConfigParser:
         elif isinstance(value, str):
             # Just because the value is string here doesn't mean it will be of string type becuase of the way we converted the HCL to JSON,
             # e.g. in `x = jsondecode(...)` is converted to `"x": "jsondecode(...)"` so value will appear as str type here but it is an object
-            # Actually, in Python it will be parsed `x: 'jsondecode(...)'` so we can test for it being a string becasue Terraform uses only " for strings
-            value = value.replace(QUOTE_REPLACE, '"')
+   
+            # Value may be wrapped in QUOTE_REPLACE, strip those. It may also contain QUOTE_REPLACE in it so convert it to double quote
+            value = value.strip(QUOTE_REPLACE).replace(QUOTE_REPLACE, '"')
             value = value.replace(SUB_REPLACE, '${')
             log(f'Resolving: {value}')
 
@@ -362,14 +395,6 @@ class TerragruntConfigParser:
                 log(f'Resolving include: {value}')
                 v = self._get_include(value)
                 return v is not None, v
-                
-            elif value.startswith('"') and value.endswith('"'):
-                # This is a true string, strip the quotes
-                log(f'Resolving string: {value}')
-                is_ok, res = self._replace_locals(value.strip('"'), local_must_exist=local_must_exist)
-                if is_ok:
-                    res = self._replace_functions(res)
-                return is_ok, res
             
             elif value.startswith('null'):
                 log(f'Resolving null')
@@ -386,6 +411,15 @@ class TerragruntConfigParser:
             elif self._is_function(value):
                 return self._exec_function(value)
             
+            else:
+                 # This is likely just a string, strip possible surrounding double quotes
+                log(f'Resolving string: {value}')
+                is_ok, res = self._replace_locals(value.strip('"'), local_must_exist=local_must_exist)
+                if is_ok:
+                    res = self._replace_functions(res)
+                log(f'- resolved: {res}')
+                return is_ok, res
+            
             raise RuntimeError(f"Should never get here: {value}")
         
         else:
@@ -396,13 +430,29 @@ class TerragruntConfigParser:
         if key.startswith('local.'):
             key = key[len('local.'):]
         lookup = self.config[self._block_key(Block.LOCALS)]
-        for k in key.split('.'):
-            res = lookup.get(k, None)
-            if res is None:
-                break
+        keys = key.split('.')
+        for key in keys:
+            if '[' in key:
+                i = key.index('[')
+                if i > 0:
+                    k = key[:i]
+                    lookup = lookup.get(k, None)
+                    if lookup is None:
+                        return None
+
+                k = key[i:]
+                while k is not None and k.startswith('['):
+                    i = k.index(']')
+                    idx = int(k[1:i])
+                    lookup = lookup[idx]
+                    i += 1
+                    k = None if i >= len(k) else k[i:]
             else:
-                lookup = res
-        return res
+                lookup = lookup.get(key, None)
+                if lookup is None:
+                    return None
+
+        return lookup
 
     def _get_include(self, key: str):
         if key.startswith('include.'):
@@ -616,7 +666,8 @@ class TerragruntConfigParser:
         return p.read_text()
 
     def _jsondecode(self, obj: str) -> dict:
-        return json.loads(obj)
+        # Strip possible surrounding double quotes
+        return json.loads(obj.strip('"'))
 
     def _find_in_parent_folders(self, name='terragrunt.hcl') -> Path:
         def find_recursive(parent: Path):
@@ -658,7 +709,6 @@ def get_args():
         default=Operation.PLAN.value,
         help=f'Terraform operation to run, one of {[op.name.lower() for op in list(Operation)]}'
     )
-
     parser.add_argument(
         '-s',
         '--allow-state',
@@ -666,10 +716,17 @@ def get_args():
         default=False,
         help='If specified then the `.tfstate` file will be allowed in the config directory'
     )
+    parser.add_argument(
+        '-p',
+        '--prefix',
+        default='',
+        help='Prefix of the configuration file to use'
+    )
+
     return parser.parse_args()
 
 
 if __name__ == '__main__':
     args = get_args()
-    hydrator = Hydrator(args.operation, args.allow_state)
+    hydrator = Hydrator(args.operation, args.allow_state, args.prefix)
     hydrator.run()

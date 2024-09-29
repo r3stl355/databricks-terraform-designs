@@ -8,6 +8,8 @@ For example, you could `plan` and `apply` using this tool but can perform subseq
 
 All the DRY projects in the repo can be executed by this tool (or Terragrunt of course).
 
+***NOTE:*** See tests in `test_hydrator.py` for examples of what's currently supported
+
 ## Requirements
 
 - The smae requirements as defined in the main [README](../../../../README.md), except for Terragrunt (you don't need that one)
@@ -67,6 +69,11 @@ python ../../../hydrator/hydrator.py destroy
 
 ```
 python -m unittest test_hydrator.py
+```
+
+- Run specific test, e.g. `test_hydrator.TestHydrator.test_large_parse`
+```
+python -m unittest test_hydrator.TestHydrator.test_large_parse
 ```
 
 ## Troubleshooting
